@@ -13,16 +13,17 @@ ALLEGRO_DISPLAY* display;
 ALLEGRO_EVENT_QUEUE* queue;
 ALLEGRO_TIMER* timer;
 
-const int ROWS = 100;
-const int COLS = 100;
+int fill_perc = 53;
 
-const int DISPLAY_WIDTH = 800;
-const int DISPLAY_HEIGHT = 800;
+const int COLS = 400;
+const int ROWS = 300;
 
-const int CELL_WIDTH = DISPLAY_WIDTH / ROWS;
-const int CELL_HEIGHT = DISPLAY_HEIGHT / COLS;
+const int DISPLAY_WIDTH = 1200;
+const int DISPLAY_HEIGHT = 900;
 
-int fill_perc = 60;
+const int CELL_WIDTH = DISPLAY_WIDTH / COLS;
+const int CELL_HEIGHT = DISPLAY_HEIGHT / ROWS;
+
 
 uint8_t* write_grid = new uint8_t[ROWS * COLS];
 uint8_t* read_grid = new uint8_t[ROWS * COLS];
@@ -39,6 +40,8 @@ void initialize();
 void initialize_random_grid();
 void terminate();
 void frame_update();
+void update_grid();
+void flip_grid();
 void draw_grid();
 
 int main(int argc, char const* argv[])
@@ -57,8 +60,6 @@ int main(int argc, char const* argv[])
 		}
 
 	}
-
-
 	terminate();
 
 	return 0;
@@ -106,21 +107,60 @@ void terminate()
 }
 
 void frame_update() {
-	draw_grid();
 	al_flip_display();
+	al_clear_to_color(floor_color);
+
+	update_grid();
+
+	draw_grid();
+
+
 }
 
+int get_neighbour_walls(size_t y, size_t x) {
+	int walls = 0;
+	for(size_t i = y - 1; i <= y + 1; i++)
+		for(size_t j = x - 1; j <= x + 1; j++) {
+			if(i <= 0 || i >= ROWS - 1 || j <= 0 || j >= COLS - 1) walls++;
+			else walls += read_grid[at(i, j)];
+		}
+
+	walls -= read_grid[at(y, x)];
+	return walls;
+}
+
+void update_grid() {
+	for(size_t i = 0; i < ROWS; i++) {
+		for(size_t j = 0; j < COLS; j++) {
+			int walls = get_neighbour_walls(i, j);
+			if(walls > 4) write_grid[at(i, j)] = 1;
+			else if(walls < 4) write_grid[at(i, j)] = 0;
+			else write_grid[at(i, j)] = read_grid[at(i, j)];
+		}
+	}
+}
+
+void flip_grid() {
+	uint8_t* tmp = read_grid;
+	read_grid = write_grid;
+	write_grid = tmp;
+}
+
+
 void draw_grid() {
+	flip_grid();
 	for(int i = 0; i < ROWS; i++) {
 		for(int j = 0; j < COLS; j++) {
-			int y = i * CELL_HEIGHT;
-			int x = j * CELL_WIDTH;
+			if(read_grid[at(i, j)]) {
+				int y = i * CELL_HEIGHT;
+				int x = j * CELL_WIDTH;
+				al_draw_filled_rectangle(x, y, x + CELL_WIDTH, y + CELL_HEIGHT, wall_color);
+			}
 
-			if(read_grid[at(i, j)]) al_draw_filled_rectangle(x, y, x + CELL_WIDTH, y + CELL_HEIGHT, wall_color);
-			else al_draw_filled_rectangle(x, y, x + CELL_WIDTH, y + CELL_HEIGHT, floor_color);
 		}
 	}
 
 }
+
 
 
