@@ -13,16 +13,25 @@ ALLEGRO_DISPLAY* display;
 ALLEGRO_EVENT_QUEUE* queue;
 ALLEGRO_TIMER* timer;
 
-int fill_perc = 53;
+int initial_fill_perc = 51;
 
-const int COLS = 400;
+const int COLS = 500;
 const int ROWS = 300;
 
-const int DISPLAY_WIDTH = 1200;
-const int DISPLAY_HEIGHT = 900;
+const int CELL_WIDTH = 3;
+const int CELL_HEIGHT = 3;
 
-const int CELL_WIDTH = DISPLAY_WIDTH / COLS;
-const int CELL_HEIGHT = DISPLAY_HEIGHT / ROWS;
+const int DISPLAY_WIDTH = COLS * CELL_WIDTH;
+const int DISPLAY_HEIGHT = ROWS * CELL_HEIGHT;
+
+
+
+const uint8_t neighbour_radius = 3;
+
+const int max_neighbours = (neighbour_radius * (neighbour_radius + 1) * 4);
+const int half_neighbours = max_neighbours / 2;
+// 
+const int roughness = 4;
 
 
 uint8_t* write_grid = new uint8_t[ROWS * COLS];
@@ -92,7 +101,7 @@ void initialize_random_grid() {
 	srand(time(0));
 	for(int i = 0; i < ROWS; i++) {
 		for(int j = 0; j < COLS; j++) {
-			read_grid[at(i, j)] = (rand() % 100) < fill_perc;
+			read_grid[at(i, j)] = (rand() % 100) < initial_fill_perc;
 		}
 	}
 	memccpy(write_grid, read_grid, ROWS * COLS, sizeof(read_grid[0]));
@@ -117,11 +126,11 @@ void frame_update() {
 
 }
 
-int get_neighbour_walls(size_t y, size_t x) {
+int get_neighbour_walls(int y, int x) {
 	int walls = 0;
-	for(size_t i = y - 1; i <= y + 1; i++)
-		for(size_t j = x - 1; j <= x + 1; j++) {
-			if(i <= 0 || i >= ROWS - 1 || j <= 0 || j >= COLS - 1) walls++;
+	for(int i = y - neighbour_radius; i <= y + neighbour_radius; i++)
+		for(int j = x - neighbour_radius; j <= x + neighbour_radius; j++) {
+			if(i <= neighbour_radius || i >= ROWS - neighbour_radius || j <= neighbour_radius || j >= COLS - neighbour_radius) walls++;
 			else walls += read_grid[at(i, j)];
 		}
 
@@ -130,12 +139,15 @@ int get_neighbour_walls(size_t y, size_t x) {
 }
 
 void update_grid() {
-	for(size_t i = 0; i < ROWS; i++) {
-		for(size_t j = 0; j < COLS; j++) {
+	for(int i = 0; i < ROWS; i++) {
+		for(int j = 0; j < COLS; j++) {
 			int walls = get_neighbour_walls(i, j);
-			if(walls > 4) write_grid[at(i, j)] = 1;
-			else if(walls < 4) write_grid[at(i, j)] = 0;
-			else write_grid[at(i, j)] = read_grid[at(i, j)];
+			if(walls >= half_neighbours + roughness)
+				write_grid[at(i, j)] = 1;
+			else if(walls <= half_neighbours - roughness)
+				write_grid[at(i, j)] = 0;
+			else
+				write_grid[at(i, j)] = read_grid[at(i, j)];
 		}
 	}
 }
