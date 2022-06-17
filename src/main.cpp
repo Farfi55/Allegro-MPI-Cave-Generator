@@ -8,7 +8,7 @@
 #include <allegro5/allegro_ttf.h>
 #include <allegro5/allegro_primitives.h>
 
-// #define GRAPHIC_MODE
+#define GRAPHIC_MODE
 
 ALLEGRO_FONT* font;
 ALLEGRO_DISPLAY* display;
