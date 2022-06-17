@@ -1,0 +1,21 @@
+{
+    "rand_seed": 69,
+    "last_generation": 20,
+    "cols": 10000,
+    "rows": 10000,
+    "cell_width": 3,
+    "cell_height": 3,
+    "initial_fill_perc": 51,
+    "neighbour_radius": 1,
+    "roughness": 1,
+    "wall_color": [
+        69,
+        59,
+        34
+    ],
+    "floor_color": [
+        201,
+        165,
+        95
+    ]
+}

@@ -1,5 +1,0 @@
-make --dry-run --keep-going --print-directory
-make: Entering directory '/mnt/c/OD_UNICAL/2.2_Algoritmi_paralleli/codice_APeSD/Esame/Allegro-MPI-Cave-Generator'
-g++ src/main.cpp -O2 -I/usr/include/allegro5 -L/usr/lib -lallegro -lallegro_font -lallegro_ttf -lallegro_primitives -o out/main
-make: Leaving directory '/mnt/c/OD_UNICAL/2.2_Algoritmi_paralleli/codice_APeSD/Esame/Allegro-MPI-Cave-Generator'
- 
