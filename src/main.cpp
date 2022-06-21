@@ -7,9 +7,12 @@
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
 #include <allegro5/allegro_primitives.h>
+#include <mpich/mpi.h>
+#include <random>
 #include "Settings.hpp"
 
 // #define GRAPHIC_MODE
+#define PARALLEL_MODE
 
 #define neighbour_radius settings.neighbour_radius
 #define COLS settings.COLS
@@ -19,21 +22,23 @@
 
 Settings settings;
 
+#ifdef GRAPHIC_MODE
 ALLEGRO_FONT* font;
 ALLEGRO_DISPLAY* display;
 ALLEGRO_EVENT_QUEUE* queue;
 ALLEGRO_TIMER* timer;
 
+int DISPLAY_WIDTH, DISPLAY_HEIGHT;
+#endif // GRAPHIC_MODE
 
 
-uint8_t* write_grid = new uint8_t[ROWS * COLS];
-uint8_t* read_grid = new uint8_t[ROWS * COLS];
+uint8_t* write_grid;
+uint8_t* read_grid;
 
-int DISPLAY_WIDTH = COLS * CELL_WIDTH;
-int DISPLAY_HEIGHT = ROWS * CELL_HEIGHT;
 
-int max_neighbours = (neighbour_radius * (neighbour_radius + 1) * 4);
-int half_neighbours = max_neighbours / 2;
+int max_neighbours, half_neighbours;
+
+int my_rank, n_procs;
 
 ALLEGRO_COLOR wall_color = al_map_rgb(settings.wall_color.r, settings.wall_color.g, settings.wall_color.b);
 ALLEGRO_COLOR floor_color = al_map_rgb(settings.floor_color.r, settings.floor_color.g, settings.floor_color.b);
@@ -51,13 +56,28 @@ void update_grid();
 void flip_grid();
 void draw_grid();
 
+void send_grid();
+void recv_grid();
+
+
 int main(int argc, char const* argv[])
 {
-
-	#ifdef GRAPHIC_MODE
 	initialize();
-	#endif
+
+
+	#ifndef PARALLEL_MODE
 	initialize_random_grid();
+	#else
+	if(my_rank == 0) {
+		initialize_random_grid();
+		send_grid();
+	}
+	else {
+		recv_grid();
+	}
+
+	#endif // PARALLEL_MODE
+
 
 	auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -71,7 +91,7 @@ int main(int argc, char const* argv[])
 		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
 			running = false;
 		else if(event.type == ALLEGRO_EVENT_TIMER) {
-			#endif
+			#endif // GRAPHIC_MODE
 
 			frame_update();
 			if(++generation == settings.last_generation) {
@@ -94,6 +114,19 @@ int main(int argc, char const* argv[])
 }
 
 void initialize() {
+	// todo: load settings
+
+	write_grid = new uint8_t[ROWS * COLS];
+	read_grid = new uint8_t[ROWS * COLS];
+
+	max_neighbours = (neighbour_radius * (neighbour_radius + 1) * 4);
+	half_neighbours = max_neighbours / 2;
+
+	#ifdef GRAPHIC_MODE
+	DISPLAY_WIDTH = COLS * CELL_WIDTH;
+	DISPLAY_HEIGHT = ROWS * CELL_HEIGHT;
+	#endif // GRAPHIC_MODE
+
 	if(!al_init()) fprintf(stderr, "Failed to initialize allegro.\n");
 	if(!al_install_keyboard()) fprintf(stderr, "Failed to install keyboard.\n");
 
@@ -117,6 +150,13 @@ void initialize() {
 	al_register_event_source(queue, al_get_timer_event_source(timer));
 	al_start_timer(timer);
 	#endif
+
+	#ifdef PARALLEL_MODE
+	MPI_Init(NULL, NULL);
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
+	#endif // PARALLEL_MODE
 }
 
 void initialize_random_grid() {
@@ -126,7 +166,7 @@ void initialize_random_grid() {
 
 	for(int i = 0; i < ROWS; i++) {
 		for(int j = 0; j < COLS; j++) {
-			read_grid[at(i, j)] = (rand() % 100) < settings.initial_fill_perc;
+			read_grid[at(i, j)] = (rand_r() % 100) < settings.initial_fill_perc;
 		}
 	}
 	memccpy(write_grid, read_grid, ROWS * COLS, sizeof(read_grid[0]));
@@ -203,5 +243,34 @@ void draw_grid() {
 
 }
 
+
+void send_grid() {
+	int rowsPerThread = ROWS / n_procs;
+
+	for(int target = 1; target < n_procs - 1; target++) {
+		MPI_Request req;
+
+
+		int start_row = rowsPerThread * target - neighbour_radius;
+		int count = (rowsPerThread + (neighbour_radius * 2)) * COLS;
+		MPI_Isend(&read_grid[at(start_row, 0)], count, MPI_UINT8_T, target, 55, MPI_COMM_WORLD, &req);
+	}
+
+	// last thread send	
+	int last_thread = n_procs - 1;
+	int rowsPerLastThread = ROWS - (rowsPerThread * last_thread);
+
+	MPI_Request last_req;
+
+
+	int start_row = rowsPerThread * last_thread;
+	int count = (rowsPerLastThread + neighbour_radius) * COLS;
+	MPI_Isend(&read_grid[at(start_row, 0)], count, MPI_UINT8_T, last_thread, 55, MPI_COMM_WORLD, &last_req);
+
+}
+
+void recv_grid() {
+	MPI_Status stat;
+}
 
 
