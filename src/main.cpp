@@ -12,7 +12,7 @@
 #include "Settings.hpp"
 
 // #define GRAPHIC_MODE
-// #define PARALLEL_MODE
+#define PARALLEL_MODE
 
 #define neighbour_radius settings->neighbour_radius
 #define COLS settings->COLS
@@ -24,12 +24,21 @@ Settings* settings;
 
 uint8_t* write_grid;
 uint8_t* read_grid;
+uint8_t* full_grid; // full grid used for drawing
 
 int max_neighbours, half_neighbours;
-int my_rank, n_procs;
 
+#ifdef PARALLEL_MODE
+int my_rank, n_procs;
+int neighbours_ranks[3][3];
+
+MPI_Datatype column_type;
+MPI_Datatype inner_grid_type;
+MPI_Comm cave_comm;
+#endif // PARALLEL_MODE
 
 #ifdef GRAPHIC_MODE
+
 ALLEGRO_FONT* font;
 ALLEGRO_DISPLAY* display;
 ALLEGRO_EVENT_QUEUE* queue;
@@ -113,9 +122,7 @@ int main(int argc, char const* argv[])
 
 	std::cout << ms_int.count() << std::endl;
 
-	#ifdef GRAPHIC_MODE
 	terminate();
-	#endif // GRAPHIC_MODE
 
 	return 0;
 }
@@ -147,10 +154,9 @@ void initialize(std::string* settingsPath) {
 	floor_color = al_map_rgb(settings->floor_color.r, settings->floor_color.g, settings->floor_color.b);
 	#endif // GRAPHIC_MODE
 
+	#ifdef GRAPHIC_MODE
 	if(!al_init()) fprintf(stderr, "Failed to initialize allegro.\n");
 	if(!al_install_keyboard()) fprintf(stderr, "Failed to install keyboard.\n");
-
-	#ifdef GRAPHIC_MODE
 	if(!al_init_font_addon()) fprintf(stderr, "Failed to initialize font addon.\n");
 	if(!al_init_ttf_addon()) fprintf(stderr, "Failed to initialize ttf addon.\n");
 	if(!al_init_primitives_addon()) fprintf(stderr, "Failed to initialize primitives addon.\n");
@@ -194,8 +200,8 @@ void initialize_random_grid() {
 
 void terminate()
 {
-	al_uninstall_keyboard();
 	#ifdef GRAPHIC_MODE
+	al_uninstall_keyboard();
 	al_destroy_event_queue(queue);
 	al_destroy_display(display);
 	al_destroy_font(font);
@@ -264,6 +270,8 @@ void draw_grid() {
 }
 #endif
 
+
+#ifdef PARALLEL_MODE
 void send_grid() {
 	int rowsPerThread = ROWS / n_procs;
 
@@ -276,7 +284,7 @@ void send_grid() {
 		MPI_Isend(&read_grid[at(start_row, 0)], count, MPI_UINT8_T, target, 55, MPI_COMM_WORLD, &req);
 	}
 
-	// last thread send	
+	// last thread send
 	int last_thread = n_procs - 1;
 	// get the remaining rows + padding
 	int rowsPerLastThread = ROWS - (rowsPerThread * last_thread);
@@ -294,4 +302,6 @@ void recv_grid() {
 
 }
 
+
+#endif // PARALLEL_MODE
 

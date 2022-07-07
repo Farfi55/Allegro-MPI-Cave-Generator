@@ -37,6 +37,20 @@ struct Settings
     Settings(std::string settingsFile) {
 
         std::ifstream settings(settingsFile);
+        if(!settings.is_open()) {
+            std::cout << "Failed to open settings file: " << settingsFile << std::endl;
+            std::cout << "Continue with default settings? (y/n)" << std::endl;
+            char c;
+            std::cin >> c;
+            if(c == 'y') {
+                return;
+            }
+            else {
+                std::cout << "Exiting..." << std::endl;
+                exit(1);
+            }
+        }
+
         json jsonSettings;
         settings >> jsonSettings;
 
