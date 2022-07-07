@@ -77,7 +77,7 @@ inline int at(int y, int x) {
 
 void initialize();
 void initialize(std::string* settingsPath);
-void initialize_random_grid();
+void serial_initialize_random_grid();
 void terminate();
 void frame_update();
 void update_grid();
@@ -87,8 +87,13 @@ void check_generic_settings();
 
 #ifdef GRAPHIC_MODE
 void graphic_initialize();
-void draw_grid();
+void serial_draw_grid();
 void check_graphic_settings();
+
+#ifdef PARALLEL_MODE
+void parallel_draw_grid();
+#endif // PARALLEL_MODE
+
 #endif // GRAPHIC_MODE
 
 #ifdef PARALLEL_MODE
@@ -170,9 +175,6 @@ void initialize(std::string* settingsPath) {
 	my_cols = my_inner_cols + 2 * radius;
 
 
-
-
-
 	#ifdef PARALLEL_MODE
 	parallel_initialize();
 	#endif // PARALLEL_MODE
@@ -183,8 +185,16 @@ void initialize(std::string* settingsPath) {
 	#endif // GRAPHIC_MODE
 
 
-	write_grid = new uint8_t[my_rows * my_cols];
-	read_grid = new uint8_t[my_rows * my_cols];
+	std::cout << "my_rows: " << my_rows << std::endl;
+	std::cout << "my_cols: " << my_cols << std::endl;
+	std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
+	std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
+
+
+	// create grid and set to 0 every element
+	write_grid = new uint8_t[my_rows * my_cols]{ };
+	read_grid = new uint8_t[my_rows * my_cols]{ };
+
 
 	#ifdef PARALLEL_MODE
 	if(my_rank == 0) {
@@ -195,8 +205,7 @@ void initialize(std::string* settingsPath) {
 		recv_grid();
 	}
 	#else
-	initialize_random_grid();
-	memccpy(read_grid, write_grid, my_rows * my_cols, sizeof(read_grid[0]));
+	serial_initialize_random_grid();
 	#endif // PARALLEL_MODE
 
 }
@@ -267,16 +276,14 @@ void parallel_initialize() {
 }
 #endif // PARALLEL_MODE
 
-void initialize_random_grid() {
+#ifdef PARALLEL_MODE
+
+void parallel_initialize_random_grid() {
 	if(settings->rand_seed)
 		srand(settings->rand_seed);
 	else srand(time(0));
 
-	#if PARALLEL_MODE
 	full_grid = new uint8_t[tot_inner_rows * tot_inner_cols];
-	#else
-	full_grid = write_grid;
-	#endif // PARALLEL_MODE
 
 	for(int i = 0; i < tot_inner_rows; i++) {
 		for(int j = 0; j < tot_inner_cols; j++) {
@@ -284,6 +291,27 @@ void initialize_random_grid() {
 		}
 	}
 }
+
+#else
+
+void serial_initialize_random_grid() {
+	if(settings->rand_seed)
+		srand(settings->rand_seed);
+	else srand(time(0));
+
+	int fill_perc = settings->initial_fill_perc;
+	for(int i = 0; i < my_rows; i++) {
+		for(int j = 0; j < my_cols; j++) {
+			if(i <= radius || i >= my_rows - radius || j <= radius || j >= my_cols - radius)
+				read_grid[at(i, j)] = 1;
+			else read_grid[at(i, j)] = ((rand() % 100) < fill_perc);
+		}
+	}
+	memccpy(write_grid, read_grid, my_rows * my_cols, sizeof(write_grid[0]));
+}
+
+#endif // PARALLEL_MODE
+
 
 void terminate()
 {
@@ -368,7 +396,12 @@ void frame_update() {
 	if(my_rank == 0) {
 		al_flip_display();
 		al_clear_to_color(wall_color);
-		draw_grid();
+
+		#ifdef PARALLEL_MODE 
+		parallel_draw_grid();
+		#else  
+		serial_draw_grid();
+		#endif // PARALLEL_MODE
 	}
 	#endif // GRAPHIC_MODE
 
@@ -381,8 +414,6 @@ int get_neighbour_walls(int y, int x) {
 	int walls = 0;
 	for(int i = y - radius; i <= y + radius; i++)
 		for(int j = x - radius; j <= x + radius; j++) {
-			// if(i <= radius || i >= my_rows - radius || j <= radius || j >= my_cols - radius) walls++;
-			// else
 			walls += read_grid[at(i, j)];
 		}
 
@@ -411,13 +442,33 @@ void flip_grid() {
 }
 
 #ifdef GRAPHIC_MODE
-void draw_grid() {
+#ifdef PARALLEL_MODE
+void parallel_draw_grid() {
 	for(int i = 0; i < tot_inner_rows; i++) {
-		for(int j = 0; j < tot_inner_rows; j++) {
-			if(read_grid[at(i, j)] == 0) {
+		for(int j = 0; j < tot_inner_cols; j++) {
+			if(full_grid[i * tot_inner_cols + j] == 0) {
+
 				int y = i * settings->CELL_HEIGHT;
 				int x = j * settings->CELL_WIDTH;
 				al_draw_filled_rectangle(x, y, x + settings->CELL_WIDTH, y + settings->CELL_HEIGHT, floor_color);
+
+			}
+		}
+	}
+}
+#endif // PARALLEL_MODE
+
+
+void serial_draw_grid() {
+
+	for(int i = radius; i < my_rows - radius; i++) {
+		for(int j = radius; j < my_cols - radius; j++) {
+			if(read_grid[at(i, j)] == 0) {
+
+				int y = (i - radius) * settings->CELL_HEIGHT;
+				int x = (j - radius) * settings->CELL_WIDTH;
+				al_draw_filled_rectangle(x, y, x + settings->CELL_WIDTH, y + settings->CELL_HEIGHT, floor_color);
+
 			}
 		}
 	}

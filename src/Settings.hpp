@@ -73,33 +73,35 @@ struct Settings
         json jsonSettings;
         settings >> jsonSettings;
 
-        rand_seed = jsonSettings["rand_seed"];
+        if(jsonSettings.contains("rand_seed")) rand_seed = jsonSettings["rand_seed"];
+        if(jsonSettings.contains("last_generation")) last_generation = jsonSettings["last_generation"];
 
-        last_generation = jsonSettings["last_generation"];
+        if(jsonSettings.contains("cols")) cols = jsonSettings["cols"];
+        if(jsonSettings.contains("rows")) rows = jsonSettings["rows"];
 
-        cols = jsonSettings["cols"];
-        rows = jsonSettings["rows"];
+        if(jsonSettings.contains("threads_per_col")) threads_per_col = jsonSettings["threads_per_col"];
+        if(jsonSettings.contains("threads_per_row")) threads_per_row = jsonSettings["threads_per_row"];
 
-        threads_per_col = jsonSettings["threads_per_column"];
-        threads_per_row = jsonSettings["threads_per_row"];
-
-        CELL_WIDTH = jsonSettings["cell_width"];
-        CELL_HEIGHT = jsonSettings["cell_height"];
-
-
-        initial_fill_perc = jsonSettings["initial_fill_perc"];
-
-        neighbour_radius = jsonSettings["neighbour_radius"];
-        roughness = jsonSettings["roughness"];
+        if(jsonSettings.contains("cell_width")) CELL_WIDTH = jsonSettings["cell_width"];
+        if(jsonSettings.contains("cell_height")) CELL_HEIGHT = jsonSettings["cell_height"];
 
 
-        wall_color.r = jsonSettings["wall_color"][0];
-        wall_color.g = jsonSettings["wall_color"][1];
-        wall_color.b = jsonSettings["wall_color"][2];
+        if(jsonSettings.contains("initial_fill_perc")) initial_fill_perc = jsonSettings["initial_fill_perc"];
 
-        floor_color.r = jsonSettings["floor_color"][0];
-        floor_color.g = jsonSettings["floor_color"][1];
-        floor_color.b = jsonSettings["floor_color"][2];
+        if(jsonSettings.contains("neighbour_radius")) neighbour_radius = jsonSettings["neighbour_radius"];
+        if(jsonSettings.contains("roughness")) roughness = jsonSettings["roughness"];
+
+        if(jsonSettings.contains("wall_color")) {
+            wall_color.r = jsonSettings["wall_color"][0];
+            wall_color.g = jsonSettings["wall_color"][1];
+            wall_color.b = jsonSettings["wall_color"][2];
+        }
+
+        if(jsonSettings.contains("floor_color")) {
+            floor_color.r = jsonSettings["floor_color"][0];
+            floor_color.g = jsonSettings["floor_color"][1];
+            floor_color.b = jsonSettings["floor_color"][2];
+        }
     }
 
 };
