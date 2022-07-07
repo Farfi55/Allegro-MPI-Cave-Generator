@@ -7,20 +7,27 @@
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
 #include <allegro5/allegro_primitives.h>
-#include <mpich/mpi.h>
+#include <mpi.h>
 #include <random>
 #include "Settings.hpp"
 
 // #define GRAPHIC_MODE
-#define PARALLEL_MODE
+// #define PARALLEL_MODE
 
-#define neighbour_radius settings.neighbour_radius
-#define COLS settings.COLS
-#define ROWS settings.ROWS
-#define CELL_WIDTH settings.CELL_WIDTH
-#define CELL_HEIGHT settings.CELL_HEIGHT
+#define neighbour_radius settings->neighbour_radius
+#define COLS settings->COLS
+#define ROWS settings->ROWS
+#define CELL_WIDTH settings->CELL_WIDTH
+#define CELL_HEIGHT settings->CELL_HEIGHT
 
-Settings settings;
+Settings* settings;
+
+uint8_t* write_grid;
+uint8_t* read_grid;
+
+int max_neighbours, half_neighbours;
+int my_rank, n_procs;
+
 
 #ifdef GRAPHIC_MODE
 ALLEGRO_FONT* font;
@@ -28,20 +35,10 @@ ALLEGRO_DISPLAY* display;
 ALLEGRO_EVENT_QUEUE* queue;
 ALLEGRO_TIMER* timer;
 
+ALLEGRO_COLOR wall_color, floor_color;
 int DISPLAY_WIDTH, DISPLAY_HEIGHT;
 #endif // GRAPHIC_MODE
 
-
-uint8_t* write_grid;
-uint8_t* read_grid;
-
-
-int max_neighbours, half_neighbours;
-
-int my_rank, n_procs;
-
-ALLEGRO_COLOR wall_color = al_map_rgb(settings.wall_color.r, settings.wall_color.g, settings.wall_color.b);
-ALLEGRO_COLOR floor_color = al_map_rgb(settings.floor_color.r, settings.floor_color.g, settings.floor_color.b);
 
 
 inline int at(int y, int x) {
@@ -49,20 +46,30 @@ inline int at(int y, int x) {
 }
 
 void initialize();
+void initialize(std::string* settingsPath);
 void initialize_random_grid();
 void terminate();
 void frame_update();
 void update_grid();
 void flip_grid();
-void draw_grid();
 
+#ifdef GRAPHIC_MODE
+void draw_grid();
+#endif // GRAPHIC_MODE
+
+#ifdef PARALLEL_MODE
 void send_grid();
 void recv_grid();
+#endif // PARALLEL_MODE
 
 
 int main(int argc, char const* argv[])
 {
-	initialize();
+	if(argc == 2) {
+		std::string settingsPath = argv[1];
+		initialize(&settingsPath);
+	}
+	else initialize();
 
 
 	#ifndef PARALLEL_MODE
@@ -94,12 +101,12 @@ int main(int argc, char const* argv[])
 			#endif // GRAPHIC_MODE
 
 			frame_update();
-			if(++generation == settings.last_generation) {
+			if(++generation == settings->last_generation) {
 				running = false;
 			}
 			#ifdef GRAPHIC_MODE
 		}
-		#endif
+		#endif // GRAPHIC_MODE
 	}
 	auto t2 = std::chrono::high_resolution_clock::now();
 	auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
@@ -108,23 +115,36 @@ int main(int argc, char const* argv[])
 
 	#ifdef GRAPHIC_MODE
 	terminate();
-	#endif
+	#endif // GRAPHIC_MODE
 
 	return 0;
 }
 
 void initialize() {
-	// todo: load settings
+	initialize(nullptr);
+}
+
+void initialize(std::string* settingsPath) {
+	if(settingsPath)
+		settings = new Settings(*settingsPath);
+	else
+		settings = new Settings();
 
 	write_grid = new uint8_t[ROWS * COLS];
 	read_grid = new uint8_t[ROWS * COLS];
 
 	max_neighbours = (neighbour_radius * (neighbour_radius + 1) * 4);
 	half_neighbours = max_neighbours / 2;
-
 	#ifdef GRAPHIC_MODE
+	if(COLS * ROWS > 1382400) {
+		std::cout << "Grid is too large for graphic mode" << std::endl;
+		exit(1);
+
+	}
 	DISPLAY_WIDTH = COLS * CELL_WIDTH;
 	DISPLAY_HEIGHT = ROWS * CELL_HEIGHT;
+	wall_color = al_map_rgb(settings->wall_color.r, settings->wall_color.g, settings->wall_color.b);
+	floor_color = al_map_rgb(settings->floor_color.r, settings->floor_color.g, settings->floor_color.b);
 	#endif // GRAPHIC_MODE
 
 	if(!al_init()) fprintf(stderr, "Failed to initialize allegro.\n");
@@ -160,13 +180,13 @@ void initialize() {
 }
 
 void initialize_random_grid() {
-	if(settings.rand_seed)
-		srand(settings.rand_seed);
+	if(settings->rand_seed)
+		srand(settings->rand_seed);
 	else srand(time(0));
 
 	for(int i = 0; i < ROWS; i++) {
 		for(int j = 0; j < COLS; j++) {
-			read_grid[at(i, j)] = (rand_r() % 100) < settings.initial_fill_perc;
+			read_grid[at(i, j)] = (rand() % 100) < settings->initial_fill_perc;
 		}
 	}
 	memccpy(write_grid, read_grid, ROWS * COLS, sizeof(read_grid[0]));
@@ -179,21 +199,23 @@ void terminate()
 	al_destroy_event_queue(queue);
 	al_destroy_display(display);
 	al_destroy_font(font);
-	#endif
+	#endif // GRAPHIC_MODE
+
+	delete settings;
+	delete[] read_grid;
+	delete[] write_grid;
 }
 
 void frame_update() {
 	#ifdef GRAPHIC_MODE
 	al_flip_display();
 	al_clear_to_color(floor_color);
-	#endif
+	draw_grid();
+	#endif // GRAPHIC_MODE
 
 	update_grid();
 	flip_grid();
 
-	#ifdef GRAPHIC_MODE
-	draw_grid();
-	#endif
 }
 
 int get_neighbour_walls(int y, int x) {
@@ -212,9 +234,9 @@ void update_grid() {
 	for(int i = 0; i < ROWS; i++) {
 		for(int j = 0; j < COLS; j++) {
 			int walls = get_neighbour_walls(i, j);
-			if(walls >= half_neighbours + settings.roughness)
+			if(walls >= half_neighbours + settings->roughness)
 				write_grid[at(i, j)] = 1;
-			else if(walls <= half_neighbours - settings.roughness)
+			else if(walls <= half_neighbours - settings->roughness)
 				write_grid[at(i, j)] = 0;
 			else
 				write_grid[at(i, j)] = read_grid[at(i, j)];
@@ -228,7 +250,7 @@ void flip_grid() {
 	write_grid = tmp;
 }
 
-
+#ifdef GRAPHIC_MODE
 void draw_grid() {
 	for(int i = 0; i < ROWS; i++) {
 		for(int j = 0; j < COLS; j++) {
@@ -237,12 +259,10 @@ void draw_grid() {
 				int x = j * CELL_WIDTH;
 				al_draw_filled_rectangle(x, y, x + CELL_WIDTH, y + CELL_HEIGHT, wall_color);
 			}
-
 		}
 	}
-
 }
-
+#endif
 
 void send_grid() {
 	int rowsPerThread = ROWS / n_procs;
@@ -258,6 +278,7 @@ void send_grid() {
 
 	// last thread send	
 	int last_thread = n_procs - 1;
+	// get the remaining rows + padding
 	int rowsPerLastThread = ROWS - (rowsPerThread * last_thread);
 
 	MPI_Request last_req;
@@ -270,7 +291,7 @@ void send_grid() {
 }
 
 void recv_grid() {
-	MPI_Status stat;
+
 }
 
 
