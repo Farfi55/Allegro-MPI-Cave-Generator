@@ -13,23 +13,42 @@ struct rgb { int r; int g; int b; };
 
 struct Settings
 {
-    int rand_seed = 0xCAFFE;
+    // seed used for random number generation
+    // 0 means random seed
+    int rand_seed = 0;
 
-    int last_generation = 20;
+    // program stops after this many generations
+    // 0 means no limit
+    int last_generation = 0;
 
+    // % of cells to be walls (0-100) (default: 51)
     int initial_fill_perc = 51;
 
-    uint8_t neighbour_radius = 3;
-    int roughness = 4;
+    uint8_t neighbour_radius = 1;
+    int roughness = 1;
 
-    int COLS = 500;
-    int ROWS = 300;
+    int cols = 500;
+    int rows = 300;
 
+    // PARALLEL ONLY
+    // number of threads per column
+    int threads_per_col = 2;
+
+    // PARALLEL ONLY
+    // number of threads per row
+    int threads_per_row = 2;
+
+    // GRAPHIC ONLY
     int CELL_WIDTH = 3;
+
+    // GRAPHIC ONLY
     int CELL_HEIGHT = 3;
 
-    rgb wall_color;
-    rgb floor_color;
+    // GRAPHIC ONLY
+    rgb wall_color{ 0, 0, 0 };
+
+    // GRAPHIC ONLY
+    rgb floor_color{ 255, 255, 255 };
 
 
     Settings() : Settings("./settings/default.json") {}
@@ -58,8 +77,12 @@ struct Settings
 
         last_generation = jsonSettings["last_generation"];
 
-        COLS = jsonSettings["cols"];
-        ROWS = jsonSettings["rows"];
+        cols = jsonSettings["cols"];
+        rows = jsonSettings["rows"];
+
+        threads_per_col = jsonSettings["threads_per_column"];
+        threads_per_row = jsonSettings["threads_per_row"];
+
         CELL_WIDTH = jsonSettings["cell_width"];
         CELL_HEIGHT = jsonSettings["cell_height"];
 
