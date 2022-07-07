@@ -39,10 +39,13 @@ struct Settings
     int threads_per_row = 2;
 
     // GRAPHIC ONLY
-    int CELL_WIDTH = 3;
+    int cell_width = 3;
 
     // GRAPHIC ONLY
-    int CELL_HEIGHT = 3;
+    int cell_height = 3;
+
+    // GRAPHIC ONLY
+    bool draw_edges = true;
 
     // GRAPHIC ONLY
     rgb wall_color{ 0, 0, 0 };
@@ -82,9 +85,11 @@ struct Settings
         if(jsonSettings.contains("threads_per_col")) threads_per_col = jsonSettings["threads_per_col"];
         if(jsonSettings.contains("threads_per_row")) threads_per_row = jsonSettings["threads_per_row"];
 
-        if(jsonSettings.contains("cell_width")) CELL_WIDTH = jsonSettings["cell_width"];
-        if(jsonSettings.contains("cell_height")) CELL_HEIGHT = jsonSettings["cell_height"];
+        if(jsonSettings.contains("cell_size")) cell_width = cell_height = jsonSettings["cell_size"];
+        if(jsonSettings.contains("cell_width")) cell_width = jsonSettings["cell_width"];
+        if(jsonSettings.contains("cell_height")) cell_height = jsonSettings["cell_height"];
 
+        if(jsonSettings.contains("draw_edges")) draw_edges = jsonSettings["draw_edges"];
 
         if(jsonSettings.contains("initial_fill_perc")) initial_fill_perc = jsonSettings["initial_fill_perc"];
 

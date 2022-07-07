@@ -13,6 +13,7 @@
 
 #define GRAPHIC_MODE
 // #define PARALLEL_MODE
+#define DEGUB_MODE
 
 Settings* settings;
 
@@ -161,6 +162,8 @@ void initialize(std::string* settingsPath) {
 	max_neighbours = (radius * (radius + 1) * 4);
 	half_neighbours = max_neighbours / 2;
 
+
+
 	// checkGeneralSettings();
 
 	#ifdef PARALLEL_MODE
@@ -184,12 +187,13 @@ void initialize(std::string* settingsPath) {
 	graphic_initialize();
 	#endif // GRAPHIC_MODE
 
-
+	#ifdef DEGUB_MODE
 	std::cout << "my_rows: " << my_rows << std::endl;
 	std::cout << "my_cols: " << my_cols << std::endl;
 	std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
 	std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
-
+	std::cout << "draw_edges: " << settings->draw_edges << std::endl;
+	#endif // DEGUB_MODE
 
 	// create grid and set to 0 every element
 	write_grid = new uint8_t[my_rows * my_cols]{ };
@@ -214,8 +218,13 @@ void initialize(std::string* settingsPath) {
 void graphic_initialize() {
 	if(my_rank == 0) {
 		check_graphic_settings();
-		DISPLAY_WIDTH = settings->cols * settings->CELL_WIDTH;
-		DISPLAY_HEIGHT = settings->rows * settings->CELL_HEIGHT;
+		DISPLAY_WIDTH = settings->cols * settings->cell_width;
+		DISPLAY_HEIGHT = settings->rows * settings->cell_height;
+		if(settings->draw_edges) {
+			DISPLAY_WIDTH += 2 * radius * settings->cell_width;
+			DISPLAY_HEIGHT += 2 * radius * settings->cell_height;
+		}
+
 		wall_color = al_map_rgb(settings->wall_color.r, settings->wall_color.g, settings->wall_color.b);
 		floor_color = al_map_rgb(settings->floor_color.r, settings->floor_color.g, settings->floor_color.b);
 		if(!al_init()) fprintf(stderr, "Failed to initialize allegro.\n");
@@ -303,11 +312,11 @@ void serial_initialize_random_grid() {
 	for(int i = 0; i < my_rows; i++) {
 		for(int j = 0; j < my_cols; j++) {
 			if(i <= radius || i >= my_rows - radius || j <= radius || j >= my_cols - radius)
-				read_grid[at(i, j)] = 1;
-			else read_grid[at(i, j)] = ((rand() % 100) < fill_perc);
+				write_grid[at(i, j)] = read_grid[at(i, j)] = 1;
+			else write_grid[at(i, j)] = read_grid[at(i, j)] = ((rand() % 100) < fill_perc);
 		}
 	}
-	memccpy(write_grid, read_grid, my_rows * my_cols, sizeof(write_grid[0]));
+	// memccpy(write_grid, read_grid, my_rows * my_cols, sizeof(write_grid[0]));
 }
 
 #endif // PARALLEL_MODE
@@ -465,9 +474,10 @@ void serial_draw_grid() {
 		for(int j = radius; j < my_cols - radius; j++) {
 			if(read_grid[at(i, j)] == 0) {
 
-				int y = (i - radius) * settings->CELL_HEIGHT;
-				int x = (j - radius) * settings->CELL_WIDTH;
-				al_draw_filled_rectangle(x, y, x + settings->CELL_WIDTH, y + settings->CELL_HEIGHT, floor_color);
+				int y = (i - (!settings->draw_edges * radius)) * settings->cell_height;
+				int x = (j - (!settings->draw_edges * radius)) * settings->cell_width;
+
+				al_draw_filled_rectangle(x, y, x + settings->cell_width, y + settings->cell_height, floor_color);
 
 			}
 		}
