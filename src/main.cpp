@@ -140,6 +140,12 @@ int main(int argc, char const* argv[])
 	auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
 	std::cout << ms_int.count() << std::endl;
+	if(!(settings->results_file_path.empty())) {
+		std::ofstream results_file;
+		results_file.open(settings->results_file_path, std::ios::ate);
+		results_file << ms_int.count() << std::endl;
+		results_file.close();
+	}
 
 	terminate();
 
@@ -212,7 +218,7 @@ void initialize(std::string* settingsPath) {
 	serial_initialize_random_grid();
 	#endif // PARALLEL_MODE
 
-}
+	}
 
 #ifdef GRAPHIC_MODE
 void graphic_initialize() {
@@ -236,7 +242,7 @@ void graphic_initialize() {
 		font = al_load_ttf_font("fonts/Roboto/Roboto-Medium.ttf", 20, 0);
 		display = al_create_display(DISPLAY_WIDTH, DISPLAY_HEIGHT);
 		queue = al_create_event_queue();
-		timer = al_create_timer(1.0 / 60);
+		timer = al_create_timer(1.0 / settings->max_frame_rate);
 
 		if(!font) fprintf(stderr, "Failed load font.\n");
 		if(!display) fprintf(stderr, "Failed initialize display.\n");
@@ -340,7 +346,7 @@ void terminate()
 		delete[] full_grid;
 	}
 	#endif // PARALLEL_MODE
-}
+	}
 
 
 void check_general_settings() {

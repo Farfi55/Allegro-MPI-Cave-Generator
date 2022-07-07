@@ -48,10 +48,15 @@ struct Settings
     bool draw_edges = true;
 
     // GRAPHIC ONLY
+    int max_frame_rate = 24;
+
+    // GRAPHIC ONLY
     rgb wall_color{ 0, 0, 0 };
 
     // GRAPHIC ONLY
     rgb floor_color{ 255, 255, 255 };
+
+    std::string results_file_path = "";
 
 
     Settings() : Settings("./settings/default.json") {}
@@ -90,6 +95,7 @@ struct Settings
         if(jsonSettings.contains("cell_height")) cell_height = jsonSettings["cell_height"];
 
         if(jsonSettings.contains("draw_edges")) draw_edges = jsonSettings["draw_edges"];
+        if(jsonSettings.contains("max_frame_rate")) max_frame_rate = jsonSettings["max_frame_rate"];
 
         if(jsonSettings.contains("initial_fill_perc")) initial_fill_perc = jsonSettings["initial_fill_perc"];
 
@@ -107,6 +113,7 @@ struct Settings
             floor_color.g = jsonSettings["floor_color"][1];
             floor_color.b = jsonSettings["floor_color"][2];
         }
-    }
+        if(jsonSettings.contains("results_file_path")) results_file_path = jsonSettings["results_file_path"];
 
+    }
 };

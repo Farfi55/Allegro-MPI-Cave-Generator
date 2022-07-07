@@ -1,15 +1,15 @@
 {
-    "rand_seed": 0,
+    "rand_seed": 1,
     "last_generation": 100,
-    "cols": 600,
+    "cols": 400,
     "rows": 400,
     "threads_per_col": 1,
     "threads_per_row": 1,
     "initial_fill_perc": 55,
     "neighbour_radius": 1,
     "roughness": 1,
-    "cell_width": 3,
-    "cell_height": 3,
+    "cell_size": 3,
+    "draw_edges": true,
     "wall_color": [
         69,
         59,
@@ -19,5 +19,6 @@
         201,
         165,
         95
-    ]
+    ],
+    "results_file_path": "./benchmarks/results_default_config.txt"
 }
