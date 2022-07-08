@@ -9,7 +9,7 @@
 #include <allegro5/allegro_primitives.h>
 #include <mpi.h>
 #include <random>
-#include "Settings.hpp"
+#include "Config.hpp"
 
 #define GRAPHIC_MODE
 #define PARALLEL_MODE
@@ -17,7 +17,7 @@
 
 #define ROOT_RANK 0
 
-Settings* settings;
+Config* cfg;
 
 uint8_t* write_grid;
 uint8_t* read_grid;
@@ -85,7 +85,7 @@ inline int at(int y, int x) {
 }
 
 inline bool isValidCoord(int y, int x) {
-	return y >= 0 && y < settings->y_threads&& x >= 0 && x < settings->x_threads;
+	return y >= 0 && y < cfg->y_threads&& x >= 0 && x < cfg->x_threads;
 }
 inline bool isValidCoord(const int coords[]) {
 	return isValidCoord(coords[0], coords[1]);
@@ -101,8 +101,7 @@ inline bool isCoordsEqual(int coords1[], int coords2[]) {
 	return coords1[0] == coords2[0] && coords1[1] == coords2[1];
 }
 
-void initialize();
-void initialize(std::string* settingsPath);
+void initialize(std::string configPath, int x_threads, int y_threads);
 void serial_initialize_random_grid();
 void terminate();
 void frame_update();
@@ -141,13 +140,36 @@ void receive_corners();
  *  --------------------------------------------------------------------------------
  * ==================================================================================
  */
+
 int main(int argc, char const* argv[])
 {
-	if(argc == 2) {
-		std::string settingsPath = argv[1];
-		initialize(&settingsPath);
+
+	{
+		std::string configPath;
+		int x_threads, y_threads;
+		for(int i = 0; i < argc; i++) {
+			if(argv[i] == std::string("-c") && i + 1 < argc) {
+				configPath = argv[++i];
+			}
+			else if(argv[i] == std::string("-x") && i + 1 < argc) {
+				x_threads = std::stoi(argv[++i]);
+				std::cout << "x_threads: " << x_threads << std::endl;
+			}
+			else if(argv[i] == std::string("-y") && i + 1 < argc) {
+				y_threads = std::stoi(argv[++i]);
+				std::cout << "y_threads: " << y_threads << std::endl;
+			}
+			// else if(argv[i] == std::string("-g")) {
+			// 	cfg->graphic_mode = true;
+			// }
+			// else if(argv[i] == std::string("-p")) {
+			// 	cfg->parallel_mode = true;
+			// }
+
+		}
+
+		initialize(configPath, x_threads, y_threads);
 	}
-	else initialize();
 
 
 	auto start_time = std::chrono::high_resolution_clock::now();
@@ -168,9 +190,9 @@ int main(int argc, char const* argv[])
 	auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
 	std::cout << ms_int.count() << std::endl;
-	if(!(settings->results_file_path.empty())) {
+	if(!(cfg->results_file_path.empty())) {
 		std::ofstream results_file;
-		results_file.open(settings->results_file_path, std::ios::ate);
+		results_file.open(cfg->results_file_path, std::ios::ate);
 		results_file << ms_int.count() << std::endl;
 		results_file.close();
 	}
@@ -178,10 +200,6 @@ int main(int argc, char const* argv[])
 	terminate();
 
 	return 0;
-}
-
-void initialize() {
-	initialize(nullptr);
 }
 
 
@@ -192,27 +210,30 @@ void initialize() {
  *  --------------------------------------------------------------------------------
  * ==================================================================================
  */
-void initialize(std::string* settingsPath) {
-	if(settingsPath)
-		settings = new Settings(*settingsPath);
+void initialize(std::string configPath, int x_threads, int y_threads) {
+	if(!configPath.empty())
+		cfg = new Config(configPath);
 	else
-		settings = new Settings();
+		cfg = new Config();
 
-	tot_inner_rows = settings->rows;
-	tot_inner_cols = settings->cols;
-	radius = settings->neighbour_radius;
+	tot_inner_rows = cfg->rows;
+	tot_inner_cols = cfg->cols;
+	radius = cfg->neighbour_radius;
 	max_neighbours = (radius * (radius + 1) * 4);
 	half_neighbours = max_neighbours / 2;
+
+	if(x_threads) cfg->x_threads = x_threads;
+	if(y_threads) cfg->y_threads = y_threads;
 
 
 	// checkGeneralSettings();
 
 	#ifdef PARALLEL_MODE
-	my_inner_rows = settings->rows / settings->y_threads;
-	my_inner_cols = settings->cols / settings->x_threads;
+	my_inner_rows = cfg->rows / cfg->y_threads;
+	my_inner_cols = cfg->cols / cfg->x_threads;
 	#else 
-	my_inner_rows = settings->rows;
-	my_inner_cols = settings->cols;
+	my_inner_rows = cfg->rows;
+	my_inner_cols = cfg->cols;
 	#endif // PARALLEL_MODE
 
 	my_rows = my_inner_rows + 2 * radius;
@@ -234,7 +255,7 @@ void initialize(std::string* settingsPath) {
 	// std::cout << "my_cols: " << my_cols << std::endl;
 	// std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
 	// std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
-	// std::cout << "draw_edges: " << settings->draw_edges << std::endl << std::endl;
+	// std::cout << "draw_edges: " << cfg->draw_edges << std::endl << std::endl;
 	#endif // DEBUG_MODE
 
 	// create grid and set to 0 every element
@@ -259,15 +280,15 @@ void initialize(std::string* settingsPath) {
 void graphic_initialize() {
 	if(my_rank == ROOT_RANK) {
 		check_graphic_settings();
-		DISPLAY_WIDTH = settings->cols * settings->cell_width;
-		DISPLAY_HEIGHT = settings->rows * settings->cell_height;
-		if(settings->draw_edges) {
-			DISPLAY_WIDTH += 2 * radius * settings->cell_width;
-			DISPLAY_HEIGHT += 2 * radius * settings->cell_height;
+		DISPLAY_WIDTH = cfg->cols * cfg->cell_width;
+		DISPLAY_HEIGHT = cfg->rows * cfg->cell_height;
+		if(cfg->draw_edges) {
+			DISPLAY_WIDTH += 2 * radius * cfg->cell_width;
+			DISPLAY_HEIGHT += 2 * radius * cfg->cell_height;
 		}
 
-		wall_color = al_map_rgb(settings->wall_color.r, settings->wall_color.g, settings->wall_color.b);
-		floor_color = al_map_rgb(settings->floor_color.r, settings->floor_color.g, settings->floor_color.b);
+		wall_color = al_map_rgb(cfg->wall_color.r, cfg->wall_color.g, cfg->wall_color.b);
+		floor_color = al_map_rgb(cfg->floor_color.r, cfg->floor_color.g, cfg->floor_color.b);
 		if(!al_init()) fprintf(stderr, "Failed to initialize allegro.\n");
 		if(!al_install_keyboard()) fprintf(stderr, "Failed to install keyboard.\n");
 		if(!al_init_font_addon()) fprintf(stderr, "Failed to initialize font addon.\n");
@@ -277,7 +298,7 @@ void graphic_initialize() {
 		font = al_load_ttf_font("fonts/Roboto/Roboto-Medium.ttf", 20, 0);
 		display = al_create_display(DISPLAY_WIDTH, DISPLAY_HEIGHT);
 		queue = al_create_event_queue();
-		timer = al_create_timer(1.0 / settings->max_frame_rate);
+		timer = al_create_timer(1.0 / cfg->max_frame_rate);
 
 		if(!font) fprintf(stderr, "Failed load font.\n");
 		if(!display) fprintf(stderr, "Failed initialize display.\n");
@@ -313,7 +334,7 @@ void parallel_initialize() {
 
 	check_parallel_settings();
 
-	int dims[2] = { settings->y_threads, settings->x_threads };
+	int dims[2] = { cfg->y_threads, cfg->x_threads };
 	int periods[2] = { 0, 0 };
 
 
@@ -362,11 +383,11 @@ void parallel_initialize() {
 #else
 
 void serial_initialize_random_grid() {
-	if(settings->rand_seed)
-		srand(settings->rand_seed);
+	if(cfg->rand_seed)
+		srand(cfg->rand_seed);
 	else srand(time(0));
 
-	int fill_perc = settings->initial_fill_perc;
+	int fill_perc = cfg->initial_fill_perc;
 	for(int i = 0; i < my_rows; i++) {
 		for(int j = 0; j < my_cols; j++) {
 			if(i <= radius || i >= my_rows - radius || j <= radius || j >= my_cols - radius)
@@ -391,7 +412,7 @@ void terminate()
 	}
 	#endif // GRAPHIC_MODE
 
-	delete settings;
+	delete cfg;
 	delete[] read_grid;
 	delete[] write_grid;
 
@@ -425,32 +446,29 @@ void check_general_settings() {
 #ifdef PARALLEL_MODE
 
 void check_parallel_settings() {
-	if(settings->x_threads <= 0) {
-		std::cout << "x_threads must be greater than 0" << std::endl;
+	if(cfg->x_threads < 1 || cfg->y_threads < 1) {
+		std::cout << "x_threads and y_threads must be at least 1" << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->x_threads <= 0) {
-		std::cout << "x_threads must be greater than 0" << std::endl;
+	if(cfg->rows % cfg->y_threads != 0) {
+		std::cout << "Rows have to be divisible by the y_threads" << std::endl;
+		std::cout << "rows: " << cfg->rows << " y_threads: " << cfg->y_threads << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->rows % settings->x_threads != 0) {
-		std::cout << "Rows have to be divisible by the number of threads per column" << std::endl;
+	if(cfg->cols % cfg->x_threads != 0) {
+		std::cout << "Cols have to be divisible by the x_threads" << std::endl;
+		std::cout << "cols: " << cfg->cols << " x_threads: " << cfg->x_threads << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->cols % settings->y_threads != 0) {
-		std::cout << "Cols have to be divisible by the number of threads per row" << std::endl;
-		MPI_Abort(MPI_COMM_WORLD, 1);
-		exit(1);
-	}
-	if(settings->y_threads * settings->x_threads != n_procs) {
+	if(cfg->y_threads * cfg->x_threads != n_procs) {
 			// make sure the product of dims is equal to the number of processes
 		std::cout << "Error: number of processes does not match the number of threads" << std::endl;
 		std::cout << "number of processes: " << n_procs << std::endl;
-		std::cout << "number of threads per row: " << settings->y_threads << std::endl;
-		std::cout << "number of threads per column: " << settings->x_threads << std::endl;
+		std::cout << "number of threads per row: " << cfg->y_threads << std::endl;
+		std::cout << "number of threads per column: " << cfg->x_threads << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
@@ -461,7 +479,7 @@ void check_parallel_settings() {
 #ifdef GRAPHIC_MODE
 
 void check_graphic_settings() {
-	if(settings->cols * settings->rows > 1382400) {
+	if(cfg->cols * cfg->rows > 1382400) {
 		std::cout << "Grid is too large for graphic mode" << std::endl;
 
 		#ifdef PARALLEL_MODE
@@ -496,14 +514,14 @@ void graphic_parallel_loop() {
 		}
 		else if(event.type == ALLEGRO_EVENT_TIMER) {
 			frame_update();
-			if(++generation == settings->last_generation) {
+			if(++generation == cfg->last_generation) {
 				is_running = false;
 			}
 		}
 	}
 	else {
 		frame_update();
-		if(++generation == settings->last_generation) {
+		if(++generation == cfg->last_generation) {
 			is_running = false;
 		}
 	}
@@ -518,7 +536,7 @@ void graphic_serial_loop() {
 		is_running = false;
 	else if(event.type == ALLEGRO_EVENT_TIMER) {
 		frame_update();
-		if(++generation == settings->last_generation) {
+		if(++generation == cfg->last_generation) {
 			is_running = false;
 		}
 	}
@@ -530,7 +548,7 @@ void graphic_serial_loop() {
 
 void no_graphic_loop() {
 	frame_update();
-	if(++generation == settings->last_generation) {
+	if(++generation == cfg->last_generation) {
 		is_running = false;
 	}
 }
@@ -611,9 +629,9 @@ void update_grid() {
 	for(int i = radius; i < my_rows - radius; i++) {
 		for(int j = radius; j < my_cols - radius; j++) {
 			int walls = get_neighbour_walls(i, j);
-			if(walls >= half_neighbours + settings->roughness)
+			if(walls >= half_neighbours + cfg->roughness)
 				write_grid[at(i, j)] = 1;
-			else if(walls <= half_neighbours - settings->roughness)
+			else if(walls <= half_neighbours - cfg->roughness)
 				write_grid[at(i, j)] = 0;
 			else
 				write_grid[at(i, j)] = read_grid[at(i, j)];
@@ -639,20 +657,20 @@ void flip_grid() {
 #ifdef PARALLEL_MODE
 void parallel_draw_grid() {
 	// offset in cells, not pixels
-	int edge_offset = edge_offset = settings->draw_edges ? radius : 0;
+	int edge_offset = edge_offset = cfg->draw_edges ? radius : 0;
 
 	for(int proc = 0; proc < n_procs; proc++) {
-		int proc_x = (proc % settings->x_threads) * my_inner_cols + edge_offset;
-		int proc_y = (proc / settings->x_threads) * my_inner_rows + edge_offset;
+		int proc_x = (proc % cfg->x_threads) * my_inner_cols + edge_offset;
+		int proc_y = (proc / cfg->x_threads) * my_inner_rows + edge_offset;
 		std::cout << "proc: " << proc << " at " << proc_x << " " << proc_y << std::endl;
 		for(int i = 0; i < my_inner_rows; i++) {
-			int y = (i + proc_y) * settings->cell_height;
+			int y = (i + proc_y) * cfg->cell_height;
 			for(int j = 0; j < my_inner_cols; j++) {
 				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
 				if(root_grid[idx] == 0) {
 
-					int x = (j + proc_x) * settings->cell_width;
-					al_draw_filled_rectangle(x, y, x + settings->cell_width, y + settings->cell_height, floor_color);
+					int x = (j + proc_x) * cfg->cell_width;
+					al_draw_filled_rectangle(x, y, x + cfg->cell_width, y + cfg->cell_height, floor_color);
 
 				}
 			}
@@ -668,10 +686,10 @@ void serial_draw_grid() {
 		for(int j = radius; j < my_cols - radius; j++) {
 			if(read_grid[at(i, j)] == 0) {
 
-				int y = (i - (!settings->draw_edges * radius)) * settings->cell_height;
-				int x = (j - (!settings->draw_edges * radius)) * settings->cell_width;
+				int y = (i - (!cfg->draw_edges * radius)) * cfg->cell_height;
+				int x = (j - (!cfg->draw_edges * radius)) * cfg->cell_width;
 
-				al_draw_filled_rectangle(x, y, x + settings->cell_width, y + settings->cell_height, floor_color);
+				al_draw_filled_rectangle(x, y, x + cfg->cell_width, y + cfg->cell_height, floor_color);
 
 			}
 		}
@@ -691,8 +709,8 @@ void serial_draw_grid() {
 
 
 void parallel_initialize_random_grid() {
-	if(settings->rand_seed)
-		srand(settings->rand_seed);
+	if(cfg->rand_seed)
+		srand(cfg->rand_seed);
 	else srand(time(0));
 
 	root_grid = new uint8_t[inner_grid_size * n_procs];
@@ -711,7 +729,7 @@ void parallel_initialize_random_grid() {
 		for(int i = 0; i < my_inner_rows; i++) {
 			for(int j = 0; j < my_inner_cols; j++) {
 				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
-				root_grid[idx] = (rand() % 100) < settings->initial_fill_perc;
+				root_grid[idx] = (rand() % 100) < cfg->initial_fill_perc;
 			}
 		}
 	}
