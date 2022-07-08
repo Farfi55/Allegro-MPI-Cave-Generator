@@ -123,8 +123,8 @@ void parallel_initialize_random_grid();
 void parallel_initialize();
 void check_parallel_settings();
 
-void send_initial_grid();
-void receive_initial_grid();
+void scatter_initial_grid();
+void gather_grid();
 
 void send_columns();
 void send_rows();
@@ -134,8 +134,13 @@ void receive_columns();
 void receive_rows();
 void receive_corners();
 
-
-
+/*
+ * ==================================================================================
+ *  --------------------------------------------------------------------------------
+ *  									MAIN
+ *  --------------------------------------------------------------------------------
+ * ==================================================================================
+ */
 int main(int argc, char const* argv[])
 {
 	if(argc == 2) {
@@ -149,7 +154,6 @@ int main(int argc, char const* argv[])
 
 
 	while(is_running) {
-		std::cout << "gen: " << generation << std::endl;
 		#ifdef GRAPHIC_MODE
 		#ifdef PARALLEL_MODE
 		graphic_parallel_loop();
@@ -180,6 +184,14 @@ void initialize() {
 	initialize(nullptr);
 }
 
+
+/*
+ * ==================================================================================
+ *  --------------------------------------------------------------------------------
+ *  								INITIALIZE
+ *  --------------------------------------------------------------------------------
+ * ==================================================================================
+ */
 void initialize(std::string* settingsPath) {
 	if(settingsPath)
 		settings = new Settings(*settingsPath);
@@ -233,11 +245,9 @@ void initialize(std::string* settingsPath) {
 	#ifdef PARALLEL_MODE
 	if(my_rank == ROOT_RANK) {
 		parallel_initialize_random_grid();
-		send_initial_grid();
 	}
-	else {
-		receive_initial_grid();
-	}
+	scatter_initial_grid();
+
 
 	#else
 	serial_initialize_random_grid();
@@ -285,6 +295,14 @@ void graphic_initialize() {
 #endif // GRAPHIC_MODE
 
 
+
+/*
+ * ==================================================================================
+ *  --------------------------------------------------------------------------------
+ *  							  PARALLEL INITIALIZE
+ *  --------------------------------------------------------------------------------
+ * ==================================================================================
+ */
 #ifdef PARALLEL_MODE
 void parallel_initialize() {
 
@@ -365,10 +383,12 @@ void serial_initialize_random_grid() {
 void terminate()
 {
 	#ifdef GRAPHIC_MODE
-	al_uninstall_keyboard();
-	al_destroy_event_queue(queue);
-	al_destroy_display(display);
-	al_destroy_font(font);
+	if(my_rank == ROOT_RANK) {
+		al_uninstall_keyboard();
+		al_destroy_event_queue(queue);
+		al_destroy_display(display);
+		al_destroy_font(font);
+	}
 	#endif // GRAPHIC_MODE
 
 	delete settings;
@@ -454,6 +474,14 @@ void check_graphic_settings() {
 #endif // GRAPHIC_MODE
 
 
+
+/*
+ * ==================================================================================
+ *  --------------------------------------------------------------------------------
+ *  									MAIN LOOP
+ *  --------------------------------------------------------------------------------
+ * ==================================================================================
+ */
 #ifdef GRAPHIC_MODE
 
 #ifdef PARALLEL_MODE
@@ -467,8 +495,6 @@ void graphic_parallel_loop() {
 			MPI_Abort(MPI_COMM_WORLD, 0);
 		}
 		else if(event.type == ALLEGRO_EVENT_TIMER) {
-			std::cout << "root looping..." << std::endl;
-
 			frame_update();
 			if(++generation == settings->last_generation) {
 				is_running = false;
@@ -476,7 +502,6 @@ void graphic_parallel_loop() {
 		}
 	}
 	else {
-		std::cout << "others looping..." << std::endl;
 		frame_update();
 		if(++generation == settings->last_generation) {
 			is_running = false;
@@ -514,9 +539,9 @@ void no_graphic_loop() {
 
 
 void frame_update() {
-	std::cout << "Generation: " << generation << std::endl;
 	#if defined(PARALLEL_MODE) && defined(DEBUG_MODE)
-	MPI_Barrier(cave_comm);
+	std::cout << "proc: " << my_rank << " at gen " << generation << std::endl;
+	// MPI_Barrier(cave_comm);
 	#endif // PARALLEL_MODE	
 
 
@@ -527,8 +552,7 @@ void frame_update() {
 
 		#ifdef PARALLEL_MODE 
 		//receive the grid from the other processes
-		// MPI_Gather(read_grid, 1, inner_grid_t, root_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
-
+		gather_grid();
 		parallel_draw_grid();
 		#else  
 		serial_draw_grid();
@@ -537,7 +561,7 @@ void frame_update() {
 	else {
 		// send read_grid to root
 		#ifdef PARALLEL_MODE
-		// MPI_Gather(read_grid, 1, inner_grid_t, root_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
+		gather_grid();
 		#endif // PARALLEL_MODE
 
 	}
@@ -603,6 +627,14 @@ void flip_grid() {
 	write_grid = tmp;
 }
 
+
+/*
+ * ==================================================================================
+ *  --------------------------------------------------------------------------------
+ *  									DRAWING
+ *  --------------------------------------------------------------------------------
+ * ==================================================================================
+ */
 #ifdef GRAPHIC_MODE
 #ifdef PARALLEL_MODE
 void parallel_draw_grid() {
@@ -648,6 +680,14 @@ void serial_draw_grid() {
 
 
 #ifdef PARALLEL_MODE
+/*
+ * ==================================================================================
+ *  --------------------------------------------------------------------------------
+ *  							PARALLEL COMUNICATION
+ *  --------------------------------------------------------------------------------
+ * ==================================================================================
+ */
+
 
 void parallel_initialize_random_grid() {
 	if(settings->rand_seed)
@@ -674,20 +714,16 @@ void parallel_initialize_random_grid() {
 
 }
 
-void send_initial_grid() {
+void scatter_initial_grid() {
 	// root sends initial grid to all other processes
 	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
 	MPI_Scatter(root_grid, 1, contiguous_grid_t, dest_buff, 1, inner_grid_t, ROOT_RANK, cave_comm);
-
 }
 
-void receive_initial_grid() {
-	// destination: read_grid with (radius) padding
-	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
-	MPI_Scatter(root_grid, 1, contiguous_grid_t, dest_buff, 1, inner_grid_t, ROOT_RANK, cave_comm);
-
+void gather_grid() {
+	uint8_t* send_buff = read_grid + (my_cols * radius) + radius;
+	MPI_Gather(send_buff, 1, inner_grid_t, root_grid, 1, contiguous_grid_t, ROOT_RANK, cave_comm);
 }
-
 
 
 void send_columns() {
