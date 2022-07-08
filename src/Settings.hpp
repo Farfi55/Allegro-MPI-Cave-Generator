@@ -32,11 +32,11 @@ struct Settings
 
     // PARALLEL ONLY
     // number of threads per column
-    int threads_per_col = 2;
+    int x_threads = 2;
 
     // PARALLEL ONLY
     // number of threads per row
-    int threads_per_row = 2;
+    int y_threads = 2;
 
     // GRAPHIC ONLY
     int cell_width = 3;
@@ -87,8 +87,8 @@ struct Settings
         if(jsonSettings.contains("cols")) cols = jsonSettings["cols"];
         if(jsonSettings.contains("rows")) rows = jsonSettings["rows"];
 
-        if(jsonSettings.contains("threads_per_col")) threads_per_col = jsonSettings["threads_per_col"];
-        if(jsonSettings.contains("threads_per_row")) threads_per_row = jsonSettings["threads_per_row"];
+        if(jsonSettings.contains("x_threads")) x_threads = jsonSettings["x_threads"];
+        if(jsonSettings.contains("y_threads")) y_threads = jsonSettings["y_threads"];
 
         if(jsonSettings.contains("cell_size")) cell_width = cell_height = jsonSettings["cell_size"];
         if(jsonSettings.contains("cell_width")) cell_width = jsonSettings["cell_width"];

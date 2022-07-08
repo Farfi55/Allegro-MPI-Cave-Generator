@@ -13,7 +13,7 @@
 
 #define GRAPHIC_MODE
 #define PARALLEL_MODE
-#define DEGUB_MODE
+#define DEBUG_MODE
 
 Settings* settings;
 
@@ -53,10 +53,10 @@ int my_cols, my_inner_cols, tot_inner_cols;
 #ifdef PARALLEL_MODE
 int neighbours_ranks[3][3];
 
-MPI_Datatype column_type; // for sending/receiving left and right columns
-MPI_Datatype row_type; // for sending/receiving top and bottom rows
-MPI_Datatype corner_type; // for sending/receiving corners
-MPI_Datatype inner_grid_type;
+MPI_Datatype column_t; // for sending/receiving left and right columns
+MPI_Datatype row_t; // for sending/receiving top and bottom rows
+MPI_Datatype corner_t; // for sending/receiving corners
+MPI_Datatype inner_grid_t;
 MPI_Comm cave_comm;
 #endif // PARALLEL_MODE
 
@@ -74,6 +74,23 @@ int DISPLAY_WIDTH, DISPLAY_HEIGHT;
 
 inline int at(int y, int x) {
 	return y * my_cols + x;
+}
+
+inline bool isValidCoord(int y, int x) {
+	return y >= 0 && y < settings->y_threads&& x >= 0 && x < settings->x_threads;
+}
+inline bool isValidCoord(const int coords[]) {
+	return isValidCoord(coords[0], coords[1]);
+}
+inline bool isValidCoord(int coords[]) {
+	return isValidCoord(coords[0], coords[1]);
+}
+
+inline bool isCoordsEqual(const int coords1[], const int coords2[]) {
+	return coords1[0] == coords2[0] && coords1[1] == coords2[1];
+}
+inline bool isCoordsEqual(int coords1[], int coords2[]) {
+	return coords1[0] == coords2[0] && coords1[1] == coords2[1];
 }
 
 void initialize();
@@ -174,8 +191,8 @@ void initialize(std::string* settingsPath) {
 	// checkGeneralSettings();
 
 	#ifdef PARALLEL_MODE
-	my_inner_rows = settings->rows / settings->threads_per_col;
-	my_inner_cols = settings->cols / settings->threads_per_row;
+	my_inner_rows = settings->rows / settings->x_threads;
+	my_inner_cols = settings->cols / settings->y_threads;
 	#else 
 	my_inner_rows = settings->rows;
 	my_inner_cols = tot_inner_cols;
@@ -194,13 +211,13 @@ void initialize(std::string* settingsPath) {
 	graphic_initialize();
 	#endif // GRAPHIC_MODE
 
-	#ifdef DEGUB_MODE
+	#ifdef DEBUG_MODE
 	std::cout << "my_rows: " << my_rows << std::endl;
 	std::cout << "my_cols: " << my_cols << std::endl;
 	std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
 	std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
 	std::cout << "draw_edges: " << settings->draw_edges << std::endl;
-	#endif // DEGUB_MODE
+	#endif // DEBUG_MODE
 
 	// create grid and set to 0 every element
 	write_grid = new uint8_t[my_rows * my_cols]{ };
@@ -270,7 +287,7 @@ void parallel_initialize() {
 
 	check_parallel_settings();
 
-	int dims[2] = { settings->threads_per_row, settings->threads_per_col };
+	int dims[2] = { settings->y_threads, settings->x_threads };
 	int periods[2] = { 0, 0 };
 
 
@@ -278,28 +295,36 @@ void parallel_initialize() {
 
 	int my_coords[2];
 	MPI_Cart_coords(cave_comm, my_rank, 2, my_coords);
+	std::cout << "rank: " << my_rank << " coords: " << my_coords[0] << " " << my_coords[1] << std::endl;
 
 	for(int i = 0; i < 3; i++) {
 		for(int j = 0; j < 3; j++) {
 			const int coords[] = { my_coords[0] + i - 1,my_coords[1] + j - 1 };
-			MPI_Cart_rank(cave_comm, coords, &neighbours_ranks[i][j]);
-			std::cout << "ranks[" << coords[0] << "][" << coords[1] << "]: " << neighbours_ranks[i][j] << std::endl;
+			if(isValidCoord(coords)) {
+				MPI_Cart_rank(cave_comm, coords, &neighbours_ranks[i][j]);
+				#ifdef DEBUG_MODE
+				std::printf("my_rank %d, neighbours_ranks[%d][%d]: %d\n", my_rank, i, j, neighbours_ranks[i][j]);
+				#endif // DEBUG_MODE
+			}
+			else {
+				neighbours_ranks[i][j] = MPI_PROC_NULL; // -1
+			}
+
 		}
 	}
 
-	const int grid_lengths[] = { my_rows, my_cols };
-	const int inner_grid_lenghts[] = { my_inner_rows, my_inner_cols };
-	const int grid_starts[] = { radius, radius };
-	MPI_Type_create_subarray(2, grid_lengths, inner_grid_lenghts, grid_starts, MPI_ORDER_C, MPI_UINT8_T, &inner_grid_type);
-	MPI_Type_vector(my_inner_rows, radius, my_cols, MPI_UINT8_T, &column_type);
-	MPI_Type_vector(radius, my_inner_cols, my_cols, MPI_UINT8_T, &row_type);
-	MPI_Type_vector(radius, radius, my_cols, MPI_UINT8_T, &corner_type);
+	const int outer_sizes[] = { my_rows, my_cols };
+	const int inner_sizes[] = { my_inner_rows, my_inner_cols };
+	const int starts[] = { radius, radius };
+	MPI_Type_create_subarray(2, outer_sizes, inner_sizes, starts, MPI_ORDER_C, MPI_UINT8_T, &inner_grid_t);
+	MPI_Type_vector(my_inner_rows, radius, my_cols, MPI_UINT8_T, &column_t);
+	MPI_Type_vector(radius, my_inner_cols, my_cols, MPI_UINT8_T, &row_t);
+	MPI_Type_vector(radius, radius, my_cols, MPI_UINT8_T, &corner_t);
 
-
-	MPI_Type_commit(&inner_grid_type);
-	MPI_Type_commit(&column_type);
-	MPI_Type_commit(&row_type);
-	MPI_Type_commit(&corner_type);
+	MPI_Type_commit(&inner_grid_t);
+	MPI_Type_commit(&column_t);
+	MPI_Type_commit(&row_t);
+	MPI_Type_commit(&corner_t);
 
 }
 #endif // PARALLEL_MODE
@@ -358,6 +383,16 @@ void terminate()
 	if(my_rank == 0) {
 		delete[] full_grid;
 	}
+
+
+	MPI_Type_free(&inner_grid_t);
+	MPI_Type_free(&column_t);
+	MPI_Type_free(&row_t);
+	MPI_Type_free(&corner_t);
+
+	MPI_Comm_free(&cave_comm);
+
+	MPI_Finalize();
 	#endif // PARALLEL_MODE
 }
 
@@ -373,32 +408,32 @@ void check_general_settings() {
 #ifdef PARALLEL_MODE
 
 void check_parallel_settings() {
-	if(settings->threads_per_col <= 0) {
-		std::cout << "threads_per_col must be greater than 0" << std::endl;
+	if(settings->x_threads <= 0) {
+		std::cout << "x_threads must be greater than 0" << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->threads_per_col <= 0) {
-		std::cout << "threads_per_col must be greater than 0" << std::endl;
+	if(settings->x_threads <= 0) {
+		std::cout << "x_threads must be greater than 0" << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->rows % settings->threads_per_col != 0) {
+	if(settings->rows % settings->x_threads != 0) {
 		std::cout << "Rows have to be divisible by the number of threads per column" << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->cols % settings->threads_per_row != 0) {
+	if(settings->cols % settings->y_threads != 0) {
 		std::cout << "Cols have to be divisible by the number of threads per row" << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
-	if(settings->threads_per_row * settings->threads_per_col != n_procs) {
+	if(settings->y_threads * settings->x_threads != n_procs) {
 			// make sure the product of dims is equal to the number of processes
 		std::cout << "Error: number of processes does not match the number of threads" << std::endl;
 		std::cout << "number of processes: " << n_procs << std::endl;
-		std::cout << "number of threads per row: " << settings->threads_per_row << std::endl;
-		std::cout << "number of threads per column: " << settings->threads_per_col << std::endl;
+		std::cout << "number of threads per row: " << settings->y_threads << std::endl;
+		std::cout << "number of threads per column: " << settings->x_threads << std::endl;
 		MPI_Abort(MPI_COMM_WORLD, 1);
 		exit(1);
 	}
