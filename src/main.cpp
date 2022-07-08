@@ -749,7 +749,29 @@ void gather_grid() {
 }
 
 
+#define TOP 0
+#define MIDDLE 1
+#define BOTTOM 2
+#define LEFT 0
+#define RIGHT 2
+
+
 void send_columns() {
+	if(neighbours_ranks[MIDDLE][LEFT] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * radius + radius;
+		MPI_Isend(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][LEFT], 1001, cave_comm, &req);
+		MPI_Request_free(&req);
+
+	}
+
+	if(neighbours_ranks[MIDDLE][RIGHT] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * radius + my_inner_cols;
+		MPI_Isend(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][RIGHT], 1002, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
+	std::cout << "[" << my_rank << "]: columns sent" << std::endl;
 }
 
 void send_rows() {
@@ -763,6 +785,18 @@ void send_corners() {
 
 
 void receive_columns() {
+
+	std::cout << "[" << my_rank << "]: receiving columns" << std::endl;
+	if(neighbours_ranks[MIDDLE][RIGHT] != MPI_PROC_NULL) {
+		int start_idx = my_cols * radius + my_inner_cols + radius;
+		MPI_Recv(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][RIGHT], 1001, cave_comm, MPI_STATUS_IGNORE);
+	}
+	if(neighbours_ranks[MIDDLE][LEFT] != MPI_PROC_NULL) {
+		int start_idx = my_cols * radius;
+		MPI_Recv(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][LEFT], 1002, cave_comm, MPI_STATUS_IGNORE);
+
+	}
+	std::cout << "[" << my_rank << "]: columns received" << std::endl;
 
 }
 
