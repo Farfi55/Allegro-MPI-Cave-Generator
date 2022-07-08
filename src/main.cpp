@@ -15,6 +15,8 @@
 #define PARALLEL_MODE
 #define DEBUG_MODE
 
+#define ROOT_RANK 0
+
 Settings* settings;
 
 uint8_t* write_grid;
@@ -49,6 +51,9 @@ int n_procs = 1; // MPI size
 
 int my_rows, my_inner_rows, tot_inner_rows;
 int my_cols, my_inner_cols, tot_inner_cols;
+
+int generation = 0;
+bool is_running = true;
 
 #ifdef PARALLEL_MODE
 int neighbours_ranks[3][3];
@@ -100,27 +105,32 @@ void terminate();
 void frame_update();
 void update_grid();
 void flip_grid();
-
 void check_generic_settings();
+void no_graphic_loop();
 
-#ifdef GRAPHIC_MODE
+// graphic only
 void graphic_initialize();
 void serial_draw_grid();
 void check_graphic_settings();
+void graphic_parallel_loop();
 
-#ifdef PARALLEL_MODE
+// parallel only
 void parallel_draw_grid();
 void parallel_initialize_random_grid();
-#endif // PARALLEL_MODE
-
-#endif // GRAPHIC_MODE
-
-#ifdef PARALLEL_MODE
 void parallel_initialize();
 void check_parallel_settings();
-void send_grid();
-void recv_grid();
-#endif // PARALLEL_MODE
+
+void send_initial_grid();
+void receive_initial_grid();
+
+void send_columns();
+void send_rows();
+void send_corners();
+
+void receive_columns();
+void receive_rows();
+void receive_corners();
+
 
 
 int main(int argc, char const* argv[])
@@ -134,24 +144,19 @@ int main(int argc, char const* argv[])
 
 	auto start_time = std::chrono::high_resolution_clock::now();
 
-	int generation = 0;
-	bool running = true;
-	while(running) {
 
+	while(is_running) {
 		#ifdef GRAPHIC_MODE
-		ALLEGRO_EVENT event;
-		al_wait_for_event(queue, &event);
-		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
-			running = false;
-		else if(event.type == ALLEGRO_EVENT_TIMER) {
-			#endif // GRAPHIC_MODE
-
-			frame_update();
-			if(++generation == settings->last_generation) {
-				running = false;
-			}
-			#ifdef GRAPHIC_MODE
+		{
+			std::cout << "gen: " << generation << std::endl;
+			#ifdef PARALLEL_MODE
+			graphic_parallel_loop();
+			#else // NO_PARALLEL_MODE
+			graphic_serial_loop();
+			#endif // PARALLEL_MODE
 		}
+		#else // NO_GRAPHIC_MODE
+		no_graphic_loop();
 		#endif // GRAPHIC_MODE
 	}
 	auto end_time = std::chrono::high_resolution_clock::now();
@@ -212,11 +217,11 @@ void initialize(std::string* settingsPath) {
 	#endif // GRAPHIC_MODE
 
 	#ifdef DEBUG_MODE
-	std::cout << "my_rows: " << my_rows << std::endl;
-	std::cout << "my_cols: " << my_cols << std::endl;
-	std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
-	std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
-	std::cout << "draw_edges: " << settings->draw_edges << std::endl;
+	// std::cout << "my_rows: " << my_rows << std::endl;
+	// std::cout << "my_cols: " << my_cols << std::endl;
+	// std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
+	// std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
+	// std::cout << "draw_edges: " << settings->draw_edges << std::endl << std::endl;
 	#endif // DEBUG_MODE
 
 	// create grid and set to 0 every element
@@ -225,13 +230,14 @@ void initialize(std::string* settingsPath) {
 
 
 	#ifdef PARALLEL_MODE
-	if(my_rank == 0) {
+	if(my_rank == ROOT_RANK) {
 		parallel_initialize_random_grid();
-		send_grid();
+		send_initial_grid();
 	}
 	else {
-		recv_grid();
+		receive_initial_grid();
 	}
+
 	#else
 	serial_initialize_random_grid();
 	#endif // PARALLEL_MODE
@@ -240,7 +246,7 @@ void initialize(std::string* settingsPath) {
 
 #ifdef GRAPHIC_MODE
 void graphic_initialize() {
-	if(my_rank == 0) {
+	if(my_rank == ROOT_RANK) {
 		check_graphic_settings();
 		DISPLAY_WIDTH = settings->cols * settings->cell_width;
 		DISPLAY_HEIGHT = settings->rows * settings->cell_height;
@@ -275,11 +281,12 @@ void graphic_initialize() {
 		al_set_app_name("cave generator");
 	}
 }
-#endif
+#endif // GRAPHIC_MODE
 
 
 #ifdef PARALLEL_MODE
 void parallel_initialize() {
+
 	MPI_Init(NULL, NULL);
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
@@ -380,7 +387,7 @@ void terminate()
 	delete[] write_grid;
 
 	#ifdef PARALLEL_MODE
-	if(my_rank == 0) {
+	if(my_rank == ROOT_RANK) {
 		delete[] full_grid;
 	}
 
@@ -446,6 +453,10 @@ void check_parallel_settings() {
 void check_graphic_settings() {
 	if(settings->cols * settings->rows > 1382400) {
 		std::cout << "Grid is too large for graphic mode" << std::endl;
+
+		#ifdef PARALLEL_MODE
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		#endif // PARALLEL_MODE
 		exit(1);
 
 	}
@@ -453,24 +464,119 @@ void check_graphic_settings() {
 #endif // GRAPHIC_MODE
 
 
+#ifdef GRAPHIC_MODE
+
+#ifdef PARALLEL_MODE
+void graphic_parallel_loop() {
+	if(my_rank == ROOT_RANK) {
+		ALLEGRO_EVENT event;
+		al_wait_for_event(queue, &event);
+		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+			is_running = false;
+			std::cout << "Abortings..." << std::endl;
+			MPI_Abort(MPI_COMM_WORLD, 0);
+		}
+		else if(event.type == ALLEGRO_EVENT_TIMER) {
+			frame_update();
+			if(++generation == settings->last_generation) {
+				is_running = false;
+			}
+		}
+	}
+	else {
+		frame_update();
+		if(++generation == settings->last_generation) {
+			is_running = false;
+		}
+	}
+}
+
+#else // NO_PARALLEL_MODE
+
+void graphic_serial_loop() {
+	ALLEGRO_EVENT event;
+	al_wait_for_event(queue, &event);
+	if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
+		is_running = false;
+	else if(event.type == ALLEGRO_EVENT_TIMER) {
+		frame_update();
+		if(++generation == settings->last_generation) {
+			is_running = false;
+		}
+	}
+}
+
+#endif // PARALLEL_MODE
+
+#else // NO_GRAPHIC_MODE
+
+void no_graphic_loop() {
+	frame_update();
+	if(++generation == settings->last_generation) {
+		is_running = false;
+	}
+}
+
+#endif // GRAPHIC_MODE
+
 
 void frame_update() {
+	std::cout << "Generation: " << generation << std::endl;
+	#if defined(PARALLEL_MODE) && defined(DEBUG_MODE)
+	MPI_Barrier(cave_comm);
+	#endif // PARALLEL_MODE	
+
+
 	#ifdef GRAPHIC_MODE
-	if(my_rank == 0) {
+	if(my_rank == ROOT_RANK) {
 		al_flip_display();
 		al_clear_to_color(wall_color);
 
 		#ifdef PARALLEL_MODE 
+		//receive the grid from the other processes
+		// MPI_Gather(read_grid, 1, inner_grid_t, full_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
+
 		parallel_draw_grid();
 		#else  
 		serial_draw_grid();
 		#endif // PARALLEL_MODE
 	}
+	else {
+		// send read_grid to root
+		#ifdef PARALLEL_MODE
+		// MPI_Gather(read_grid, 1, inner_grid_t, full_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
+		#endif // PARALLEL_MODE
+
+	}
 	#endif // GRAPHIC_MODE
 
+	#ifdef PARALLEL_MODE
+	// send columns to other processes
+	send_columns();
+
+	// send rows to other processes
+	send_rows();
+
+	// send corners to other processes
+	send_corners();
+
+	// receive columns from other processes
+	receive_columns();
+
+	// receive rows from other processes
+	receive_rows();
+
+	// receive corners from other processes
+	receive_corners();
+
+
+	#endif // PARALLEL_MODE
 	update_grid();
 	flip_grid();
 
+	#ifdef PARALLEL_MODE
+	MPI_Barrier(cave_comm);
+	#endif // PARALLEL_MODE	
 }
 
 int get_neighbour_walls(int y, int x) {
@@ -541,35 +647,49 @@ void serial_draw_grid() {
 
 
 #ifdef PARALLEL_MODE
-void send_grid() {
-	// int rowsPerThread = ROWS / n_procs;
-
-	// for(int target = 1; target < n_procs - 1; target++) {
-	// 	MPI_Request req;
 
 
-	// 	int start_row = rowsPerThread * target - radius;
-	// 	int count = (rowsPerThread + (radius * 2)) * COLS;
-	// 	MPI_Isend(&read_grid[at(start_row, 0)], count, MPI_UINT8_T, target, 55, MPI_COMM_WORLD, &req);
-	// }
-
-	// // last thread send
-	// int last_thread = n_procs - 1;
-	// // get the remaining rows + padding
-	// int rowsPerLastThread = ROWS - (rowsPerThread * last_thread);
-
-	// MPI_Request last_req;
-
-
-	// int start_row = rowsPerThread * last_thread;
-	// int count = (rowsPerLastThread + radius) * COLS;
-	// MPI_Isend(&read_grid[at(start_row, 0)], count, MPI_UINT8_T, last_thread, 55, MPI_COMM_WORLD, &last_req);
+void send_initial_grid() {
+	// root sends initial grid to all other processes
+	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
+	MPI_Scatter(dest_buff, 1, inner_grid_t, full_grid, 1, inner_grid_t, ROOT_RANK, cave_comm);
 
 }
 
-void recv_grid() {
+void receive_initial_grid() {
+	// destination: read_grid with (radius) padding
+	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
+	MPI_Scatter(dest_buff, 1, inner_grid_t, full_grid, 1, inner_grid_t, ROOT_RANK, cave_comm);
 
 }
+
+
+
+void send_columns() {
+}
+
+void send_rows() {
+
+}
+
+void send_corners() {
+
+}
+
+
+
+void receive_columns() {
+
+}
+
+void receive_rows() {
+
+}
+
+void receive_corners() {
+
+}
+
 
 
 #endif // PARALLEL_MODE
