@@ -208,8 +208,8 @@ void initialize(std::string* settingsPath) {
 	// checkGeneralSettings();
 
 	#ifdef PARALLEL_MODE
-	my_inner_rows = settings->rows / settings->x_threads;
-	my_inner_cols = settings->cols / settings->y_threads;
+	my_inner_rows = settings->rows / settings->y_threads;
+	my_inner_cols = settings->cols / settings->x_threads;
 	#else 
 	my_inner_rows = settings->rows;
 	my_inner_cols = settings->cols;
@@ -642,12 +642,13 @@ void parallel_draw_grid() {
 	int edge_offset = edge_offset = settings->draw_edges ? radius : 0;
 
 	for(int proc = 0; proc < n_procs; proc++) {
-		int proc_x = (proc % settings->x_threads) * my_cols + edge_offset;
-		int proc_y = (proc / settings->x_threads) * my_rows + edge_offset;
+		int proc_x = (proc % settings->x_threads) * my_inner_cols + edge_offset;
+		int proc_y = (proc / settings->x_threads) * my_inner_rows + edge_offset;
+		std::cout << "proc: " << proc << " at " << proc_x << " " << proc_y << std::endl;
 		for(int i = 0; i < my_inner_rows; i++) {
 			int y = (i + proc_y) * settings->cell_height;
 			for(int j = 0; j < my_inner_cols; j++) {
-				int idx = (proc * inner_grid_size) + (i * tot_inner_cols) + j;
+				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
 				if(root_grid[idx] == 0) {
 
 					int x = (j + proc_x) * settings->cell_width;
@@ -703,6 +704,10 @@ void parallel_initialize_random_grid() {
 	// }
 
 	for(int proc = 0; proc < n_procs; proc++) {
+		#ifdef DEBUG_MODE
+		std::cout << "proc: " << proc << " starts at: " << (proc * inner_grid_size) << std::endl;
+		#endif // DEBUG_MODE
+
 		for(int i = 0; i < my_inner_rows; i++) {
 			for(int j = 0; j < my_inner_cols; j++) {
 				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
@@ -716,12 +721,12 @@ void parallel_initialize_random_grid() {
 
 void scatter_initial_grid() {
 	// root sends initial grid to all other processes
-	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
+	uint8_t* dest_buff = &read_grid[(my_cols * radius) + radius];
 	MPI_Scatter(root_grid, 1, contiguous_grid_t, dest_buff, 1, inner_grid_t, ROOT_RANK, cave_comm);
 }
 
 void gather_grid() {
-	uint8_t* send_buff = read_grid + (my_cols * radius) + radius;
+	uint8_t* send_buff = &read_grid[(my_cols * radius) + radius];
 	MPI_Gather(send_buff, 1, inner_grid_t, root_grid, 1, contiguous_grid_t, ROOT_RANK, cave_comm);
 }
 
