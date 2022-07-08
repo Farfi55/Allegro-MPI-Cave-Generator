@@ -12,7 +12,7 @@
 #include "Settings.hpp"
 
 #define GRAPHIC_MODE
-// #define PARALLEL_MODE
+#define PARALLEL_MODE
 #define DEGUB_MODE
 
 Settings* settings;
@@ -55,7 +55,7 @@ int neighbours_ranks[3][3];
 
 MPI_Datatype column_type; // for sending/receiving left and right columns
 MPI_Datatype row_type; // for sending/receiving top and bottom rows
-MPI_Datatype angle_type; // for sending/receiving corners
+MPI_Datatype corner_type; // for sending/receiving corners
 MPI_Datatype inner_grid_type;
 MPI_Comm cave_comm;
 #endif // PARALLEL_MODE
@@ -93,6 +93,7 @@ void check_graphic_settings();
 
 #ifdef PARALLEL_MODE
 void parallel_draw_grid();
+void parallel_initialize_random_grid();
 #endif // PARALLEL_MODE
 
 #endif // GRAPHIC_MODE
@@ -208,7 +209,7 @@ void initialize(std::string* settingsPath) {
 
 	#ifdef PARALLEL_MODE
 	if(my_rank == 0) {
-		initialize_random_grid();
+		parallel_initialize_random_grid();
 		send_grid();
 	}
 	else {
@@ -218,7 +219,7 @@ void initialize(std::string* settingsPath) {
 	serial_initialize_random_grid();
 	#endif // PARALLEL_MODE
 
-	}
+}
 
 #ifdef GRAPHIC_MODE
 void graphic_initialize() {
@@ -282,11 +283,23 @@ void parallel_initialize() {
 		for(int j = 0; j < 3; j++) {
 			const int coords[] = { my_coords[0] + i - 1,my_coords[1] + j - 1 };
 			MPI_Cart_rank(cave_comm, coords, &neighbours_ranks[i][j]);
+			std::cout << "ranks[" << coords[0] << "][" << coords[1] << "]: " << neighbours_ranks[i][j] << std::endl;
 		}
 	}
 
+	const int grid_lengths[] = { my_rows, my_cols };
+	const int inner_grid_lenghts[] = { my_inner_rows, my_inner_cols };
+	const int grid_starts[] = { radius, radius };
+	MPI_Type_create_subarray(2, grid_lengths, inner_grid_lenghts, grid_starts, MPI_ORDER_C, MPI_UINT8_T, &inner_grid_type);
+	MPI_Type_vector(my_inner_rows, radius, my_cols, MPI_UINT8_T, &column_type);
+	MPI_Type_vector(radius, my_inner_cols, my_cols, MPI_UINT8_T, &row_type);
+	MPI_Type_vector(radius, radius, my_cols, MPI_UINT8_T, &corner_type);
 
-	MPI_Type_vector(radius, my_cols, radius * 2, MPI_UINT8_T, &column_type);
+
+	MPI_Type_commit(&inner_grid_type);
+	MPI_Type_commit(&column_type);
+	MPI_Type_commit(&row_type);
+	MPI_Type_commit(&corner_type);
 
 }
 #endif // PARALLEL_MODE
@@ -346,7 +359,7 @@ void terminate()
 		delete[] full_grid;
 	}
 	#endif // PARALLEL_MODE
-	}
+}
 
 
 void check_general_settings() {
@@ -463,9 +476,9 @@ void parallel_draw_grid() {
 		for(int j = 0; j < tot_inner_cols; j++) {
 			if(full_grid[i * tot_inner_cols + j] == 0) {
 
-				int y = i * settings->CELL_HEIGHT;
-				int x = j * settings->CELL_WIDTH;
-				al_draw_filled_rectangle(x, y, x + settings->CELL_WIDTH, y + settings->CELL_HEIGHT, floor_color);
+				int y = (i + settings->draw_edges * radius) * settings->cell_height;
+				int x = (j + settings->draw_edges * radius) * settings->cell_width;
+				al_draw_filled_rectangle(x, y, x + settings->cell_width, y + settings->cell_height, floor_color);
 
 			}
 		}
