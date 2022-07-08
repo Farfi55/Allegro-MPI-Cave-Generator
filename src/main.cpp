@@ -7,6 +7,7 @@
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
 #include <allegro5/allegro_primitives.h>
+#include <algorithm>
 #include <mpi.h>
 #include <random>
 #include "Config.hpp"
@@ -53,6 +54,7 @@ int my_rows, my_inner_rows, tot_inner_rows;
 int my_cols, my_inner_cols, tot_inner_cols;
 
 int inner_grid_size;
+int outer_grid_size;
 
 int generation = 0;
 bool is_running = true;
@@ -239,7 +241,7 @@ void initialize(std::string configPath, int x_threads, int y_threads) {
 	my_rows = my_inner_rows + 2 * radius;
 	my_cols = my_inner_cols + 2 * radius;
 	inner_grid_size = my_inner_rows * my_inner_cols;
-
+	outer_grid_size = my_rows * my_cols;
 
 	#ifdef PARALLEL_MODE
 	parallel_initialize();
@@ -258,9 +260,10 @@ void initialize(std::string configPath, int x_threads, int y_threads) {
 	// std::cout << "draw_edges: " << cfg->draw_edges << std::endl << std::endl;
 	#endif // DEBUG_MODE
 
-	// create grid and set to 0 every element
-	write_grid = new uint8_t[my_rows * my_cols]{ };
-	read_grid = new uint8_t[my_rows * my_cols]{ };
+	// create grid and set to 1 every element
+	write_grid = new uint8_t[outer_grid_size];
+	read_grid = new uint8_t[outer_grid_size];
+	std::fill_n(read_grid, outer_grid_size, 1);
 
 
 	#ifdef PARALLEL_MODE
@@ -268,11 +271,10 @@ void initialize(std::string configPath, int x_threads, int y_threads) {
 		parallel_initialize_random_grid();
 	}
 	scatter_initial_grid();
-
-
 	#else
 	serial_initialize_random_grid();
 	#endif // PARALLEL_MODE
+	std::copy_n(read_grid, outer_grid_size, write_grid);
 
 }
 
@@ -395,7 +397,6 @@ void serial_initialize_random_grid() {
 			else write_grid[at(i, j)] = read_grid[at(i, j)] = ((rand() % 100) < fill_perc);
 		}
 	}
-	// memccpy(write_grid, read_grid, my_rows * my_cols, sizeof(write_grid[0]));
 }
 
 #endif // PARALLEL_MODE
