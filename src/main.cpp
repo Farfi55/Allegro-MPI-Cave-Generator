@@ -771,10 +771,25 @@ void send_columns() {
 		MPI_Isend(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][RIGHT], 1002, cave_comm, &req);
 		MPI_Request_free(&req);
 	}
-	std::cout << "[" << my_rank << "]: columns sent" << std::endl;
+	// #ifdef DEBUG_MODE
+	// std::cout << "[" << my_rank << "]: columns sent" << std::endl;
+	// #endif // DEBUG_MODE
 }
 
 void send_rows() {
+	if(neighbours_ranks[TOP][MIDDLE] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * radius + radius;
+		MPI_Isend(&read_grid[start_idx], 1, row_t, neighbours_ranks[TOP][MIDDLE], 1003, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
+
+	if(neighbours_ranks[BOTTOM][MIDDLE] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * my_inner_rows + radius;
+		MPI_Isend(&read_grid[start_idx], 1, row_t, neighbours_ranks[BOTTOM][MIDDLE], 1004, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
 
 }
 
@@ -786,7 +801,7 @@ void send_corners() {
 
 void receive_columns() {
 
-	std::cout << "[" << my_rank << "]: receiving columns" << std::endl;
+	// std::cout << "[" << my_rank << "]: receiving columns" << std::endl;
 	if(neighbours_ranks[MIDDLE][RIGHT] != MPI_PROC_NULL) {
 		int start_idx = my_cols * radius + my_inner_cols + radius;
 		MPI_Recv(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][RIGHT], 1001, cave_comm, MPI_STATUS_IGNORE);
@@ -796,12 +811,21 @@ void receive_columns() {
 		MPI_Recv(&read_grid[start_idx], 1, column_t, neighbours_ranks[MIDDLE][LEFT], 1002, cave_comm, MPI_STATUS_IGNORE);
 
 	}
-	std::cout << "[" << my_rank << "]: columns received" << std::endl;
+	// std::cout << "[" << my_rank << "]: columns received" << std::endl;
 
 }
 
 void receive_rows() {
 
+	if(neighbours_ranks[BOTTOM][MIDDLE] != MPI_PROC_NULL) {
+		int start_idx = my_cols * (my_rows - radius) + radius;
+		MPI_Recv(&read_grid[start_idx], 1, row_t, neighbours_ranks[BOTTOM][MIDDLE], 1003, cave_comm, MPI_STATUS_IGNORE);
+	}
+
+	if(neighbours_ranks[TOP][MIDDLE] != MPI_PROC_NULL) {
+		int start_idx = radius;
+		MPI_Recv(&read_grid[start_idx], 1, row_t, neighbours_ranks[TOP][MIDDLE], 1004, cave_comm, MPI_STATUS_IGNORE);
+	}
 }
 
 void receive_corners() {
