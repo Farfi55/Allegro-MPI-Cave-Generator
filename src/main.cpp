@@ -21,7 +21,7 @@ Settings* settings;
 
 uint8_t* write_grid;
 uint8_t* read_grid;
-uint8_t* full_grid; // full grid used for drawing
+uint8_t* root_grid; // full grid used for drawing
 
 
 /**
@@ -52,16 +52,19 @@ int n_procs = 1; // MPI size
 int my_rows, my_inner_rows, tot_inner_rows;
 int my_cols, my_inner_cols, tot_inner_cols;
 
+int inner_grid_size;
+
 int generation = 0;
 bool is_running = true;
 
 #ifdef PARALLEL_MODE
 int neighbours_ranks[3][3];
 
+MPI_Datatype inner_grid_t;
+MPI_Datatype contiguous_grid_t;
 MPI_Datatype column_t; // for sending/receiving left and right columns
 MPI_Datatype row_t; // for sending/receiving top and bottom rows
 MPI_Datatype corner_t; // for sending/receiving corners
-MPI_Datatype inner_grid_t;
 MPI_Comm cave_comm;
 #endif // PARALLEL_MODE
 
@@ -146,15 +149,13 @@ int main(int argc, char const* argv[])
 
 
 	while(is_running) {
+		std::cout << "gen: " << generation << std::endl;
 		#ifdef GRAPHIC_MODE
-		{
-			std::cout << "gen: " << generation << std::endl;
-			#ifdef PARALLEL_MODE
-			graphic_parallel_loop();
-			#else // NO_PARALLEL_MODE
-			graphic_serial_loop();
-			#endif // PARALLEL_MODE
-		}
+		#ifdef PARALLEL_MODE
+		graphic_parallel_loop();
+		#else // NO_PARALLEL_MODE
+		graphic_serial_loop();
+		#endif // PARALLEL_MODE
 		#else // NO_GRAPHIC_MODE
 		no_graphic_loop();
 		#endif // GRAPHIC_MODE
@@ -192,7 +193,6 @@ void initialize(std::string* settingsPath) {
 	half_neighbours = max_neighbours / 2;
 
 
-
 	// checkGeneralSettings();
 
 	#ifdef PARALLEL_MODE
@@ -200,11 +200,12 @@ void initialize(std::string* settingsPath) {
 	my_inner_cols = settings->cols / settings->y_threads;
 	#else 
 	my_inner_rows = settings->rows;
-	my_inner_cols = tot_inner_cols;
+	my_inner_cols = settings->cols;
 	#endif // PARALLEL_MODE
 
 	my_rows = my_inner_rows + 2 * radius;
 	my_cols = my_inner_cols + 2 * radius;
+	inner_grid_size = my_inner_rows * my_inner_cols;
 
 
 	#ifdef PARALLEL_MODE
@@ -324,32 +325,20 @@ void parallel_initialize() {
 	const int inner_sizes[] = { my_inner_rows, my_inner_cols };
 	const int starts[] = { radius, radius };
 	MPI_Type_create_subarray(2, outer_sizes, inner_sizes, starts, MPI_ORDER_C, MPI_UINT8_T, &inner_grid_t);
+	MPI_Type_contiguous(inner_grid_size, MPI_UINT8_T, &contiguous_grid_t);
+
 	MPI_Type_vector(my_inner_rows, radius, my_cols, MPI_UINT8_T, &column_t);
 	MPI_Type_vector(radius, my_inner_cols, my_cols, MPI_UINT8_T, &row_t);
 	MPI_Type_vector(radius, radius, my_cols, MPI_UINT8_T, &corner_t);
 
+
+
 	MPI_Type_commit(&inner_grid_t);
+	MPI_Type_commit(&contiguous_grid_t);
 	MPI_Type_commit(&column_t);
 	MPI_Type_commit(&row_t);
 	MPI_Type_commit(&corner_t);
 
-}
-#endif // PARALLEL_MODE
-
-#ifdef PARALLEL_MODE
-
-void parallel_initialize_random_grid() {
-	if(settings->rand_seed)
-		srand(settings->rand_seed);
-	else srand(time(0));
-
-	full_grid = new uint8_t[tot_inner_rows * tot_inner_cols];
-
-	for(int i = 0; i < tot_inner_rows; i++) {
-		for(int j = 0; j < tot_inner_cols; j++) {
-			full_grid[i * tot_inner_cols + j] = (rand() % 100) < settings->initial_fill_perc;
-		}
-	}
 }
 
 #else
@@ -388,11 +377,12 @@ void terminate()
 
 	#ifdef PARALLEL_MODE
 	if(my_rank == ROOT_RANK) {
-		delete[] full_grid;
+		delete[] root_grid;
 	}
 
 
 	MPI_Type_free(&inner_grid_t);
+	MPI_Type_free(&contiguous_grid_t);
 	MPI_Type_free(&column_t);
 	MPI_Type_free(&row_t);
 	MPI_Type_free(&corner_t);
@@ -477,6 +467,8 @@ void graphic_parallel_loop() {
 			MPI_Abort(MPI_COMM_WORLD, 0);
 		}
 		else if(event.type == ALLEGRO_EVENT_TIMER) {
+			std::cout << "root looping..." << std::endl;
+
 			frame_update();
 			if(++generation == settings->last_generation) {
 				is_running = false;
@@ -484,6 +476,7 @@ void graphic_parallel_loop() {
 		}
 	}
 	else {
+		std::cout << "others looping..." << std::endl;
 		frame_update();
 		if(++generation == settings->last_generation) {
 			is_running = false;
@@ -534,7 +527,7 @@ void frame_update() {
 
 		#ifdef PARALLEL_MODE 
 		//receive the grid from the other processes
-		// MPI_Gather(read_grid, 1, inner_grid_t, full_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
+		// MPI_Gather(read_grid, 1, inner_grid_t, root_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
 
 		parallel_draw_grid();
 		#else  
@@ -544,7 +537,7 @@ void frame_update() {
 	else {
 		// send read_grid to root
 		#ifdef PARALLEL_MODE
-		// MPI_Gather(read_grid, 1, inner_grid_t, full_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
+		// MPI_Gather(read_grid, 1, inner_grid_t, root_grid, n_procs, inner_grid_t, ROOT_RANK, cave_comm);
 		#endif // PARALLEL_MODE
 
 	}
@@ -613,14 +606,22 @@ void flip_grid() {
 #ifdef GRAPHIC_MODE
 #ifdef PARALLEL_MODE
 void parallel_draw_grid() {
-	for(int i = 0; i < tot_inner_rows; i++) {
-		for(int j = 0; j < tot_inner_cols; j++) {
-			if(full_grid[i * tot_inner_cols + j] == 0) {
+	// offset in cells, not pixels
+	int edge_offset = edge_offset = settings->draw_edges ? radius : 0;
 
-				int y = (i + settings->draw_edges * radius) * settings->cell_height;
-				int x = (j + settings->draw_edges * radius) * settings->cell_width;
-				al_draw_filled_rectangle(x, y, x + settings->cell_width, y + settings->cell_height, floor_color);
+	for(int proc = 0; proc < n_procs; proc++) {
+		int proc_x = (proc % settings->x_threads) * my_cols + edge_offset;
+		int proc_y = (proc / settings->x_threads) * my_rows + edge_offset;
+		for(int i = 0; i < my_inner_rows; i++) {
+			int y = (i + proc_y) * settings->cell_height;
+			for(int j = 0; j < my_inner_cols; j++) {
+				int idx = (proc * inner_grid_size) + (i * tot_inner_cols) + j;
+				if(root_grid[idx] == 0) {
 
+					int x = (j + proc_x) * settings->cell_width;
+					al_draw_filled_rectangle(x, y, x + settings->cell_width, y + settings->cell_height, floor_color);
+
+				}
 			}
 		}
 	}
@@ -648,18 +649,42 @@ void serial_draw_grid() {
 
 #ifdef PARALLEL_MODE
 
+void parallel_initialize_random_grid() {
+	if(settings->rand_seed)
+		srand(settings->rand_seed);
+	else srand(time(0));
+
+	root_grid = new uint8_t[inner_grid_size * n_procs];
+
+	// for(int i = 0; i < tot_inner_rows; i++) {
+	// 	for(int j = 0; j < tot_inner_cols; j++) {
+	// 		root_grid[i * tot_inner_cols + j] = (rand() % 100) < settings->initial_fill_perc;
+	// 	}
+	// }
+
+	for(int proc = 0; proc < n_procs; proc++) {
+		for(int i = 0; i < my_inner_rows; i++) {
+			for(int j = 0; j < my_inner_cols; j++) {
+				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
+				root_grid[idx] = (rand() % 100) < settings->initial_fill_perc;
+			}
+		}
+	}
+
+
+}
 
 void send_initial_grid() {
 	// root sends initial grid to all other processes
 	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
-	MPI_Scatter(dest_buff, 1, inner_grid_t, full_grid, 1, inner_grid_t, ROOT_RANK, cave_comm);
+	MPI_Scatter(root_grid, 1, contiguous_grid_t, dest_buff, 1, inner_grid_t, ROOT_RANK, cave_comm);
 
 }
 
 void receive_initial_grid() {
 	// destination: read_grid with (radius) padding
 	uint8_t* dest_buff = read_grid + (my_cols * radius) + radius;
-	MPI_Scatter(dest_buff, 1, inner_grid_t, full_grid, 1, inner_grid_t, ROOT_RANK, cave_comm);
+	MPI_Scatter(root_grid, 1, contiguous_grid_t, dest_buff, 1, inner_grid_t, ROOT_RANK, cave_comm);
 
 }
 
