@@ -8,6 +8,8 @@ This is a project for the *Parallel Algorithmsm* course at my university *(Unica
 
 It utilizes **mpi** to parallelize a **cellular automata algorithm** on a 2d cartesian grid.
 
+Inspired by this [video](https://youtu.be/v7yyZZjF1z4)
+
 ## How to build
 
 ### dependencies
