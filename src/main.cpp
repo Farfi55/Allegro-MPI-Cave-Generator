@@ -608,7 +608,7 @@ void frame_update() {
 
 	#endif // PARALLEL_MODE
 	update_grid();
-	flip_grid();
+	std::swap(read_grid, write_grid);
 
 	#ifdef PARALLEL_MODE
 	MPI_Barrier(cave_comm);
@@ -630,6 +630,7 @@ void update_grid() {
 	for(int i = radius; i < my_rows - radius; i++) {
 		for(int j = radius; j < my_cols - radius; j++) {
 			int walls = get_neighbour_walls(i, j);
+
 			if(walls >= half_neighbours + cfg->roughness)
 				write_grid[at(i, j)] = 1;
 			else if(walls <= half_neighbours - cfg->roughness)
@@ -640,11 +641,6 @@ void update_grid() {
 	}
 }
 
-void flip_grid() {
-	uint8_t* tmp = read_grid;
-	read_grid = write_grid;
-	write_grid = tmp;
-}
 
 
 /*
@@ -661,12 +657,22 @@ void parallel_draw_grid() {
 	int edge_offset = edge_offset = cfg->draw_edges ? radius : 0;
 
 	for(int proc = 0; proc < n_procs; proc++) {
+
 		int proc_x = (proc % cfg->x_threads) * my_inner_cols + edge_offset;
 		int proc_y = (proc / cfg->x_threads) * my_inner_rows + edge_offset;
+
+		int proc_x2 = ((proc % cfg->x_threads) + 1) * my_inner_cols + edge_offset;
+		int proc_y2 = ((proc / cfg->x_threads) + 1) * my_inner_rows + edge_offset;
+
+
 		std::cout << "proc: " << proc << " at " << proc_x << " " << proc_y << std::endl;
+
 		for(int i = 0; i < my_inner_rows; i++) {
+
 			int y = (i + proc_y) * cfg->cell_height;
+
 			for(int j = 0; j < my_inner_cols; j++) {
+
 				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
 				if(root_grid[idx] == 0) {
 
@@ -676,6 +682,10 @@ void parallel_draw_grid() {
 				}
 			}
 		}
+		#ifdef DEBUG_MODE
+		ALLEGRO_COLOR red_color = al_map_rgba(125, 125, 200, 255);
+		al_draw_rectangle(proc_x * cfg->cell_width, proc_y * cfg->cell_height, proc_x2 * cfg->cell_width, proc_y2 * cfg->cell_height, red_color, 1);
+		#endif // DEBUG_MODE
 	}
 }
 #endif // PARALLEL_MODE
