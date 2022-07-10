@@ -47,6 +47,9 @@ struct Config
 	// GRAPHIC ONLY
 	bool draw_edges = true;
 
+	//GRAPHIC AND PARALLEL ONLY
+	bool draw_threads_grid = true;
+
 	// GRAPHIC ONLY
 	int max_frame_rate = 24;
 
@@ -55,6 +58,9 @@ struct Config
 
 	// GRAPHIC ONLY
 	rgb floor_color{ 255, 255, 255 };
+
+	// GRAPHIC ONLY
+	rgb threads_grid_color{ 255, 0, 0 };
 
 	std::string results_file_path = "";
 
@@ -102,6 +108,8 @@ struct Config
 		if(jsonConfig.contains("neighbour_radius")) neighbour_radius = jsonConfig["neighbour_radius"];
 		if(jsonConfig.contains("roughness")) roughness = jsonConfig["roughness"];
 
+		if(jsonConfig.contains("draw_threads_grid")) draw_threads_grid = jsonConfig["draw_threads_grid"];
+
 		if(jsonConfig.contains("wall_color")) {
 			wall_color.r = jsonConfig["wall_color"][0];
 			wall_color.g = jsonConfig["wall_color"][1];
@@ -113,6 +121,13 @@ struct Config
 			floor_color.g = jsonConfig["floor_color"][1];
 			floor_color.b = jsonConfig["floor_color"][2];
 		}
+
+		if(jsonConfig.contains("threads_grid_color")) {
+			threads_grid_color.r = jsonConfig["threads_grid_color"][0];
+			threads_grid_color.g = jsonConfig["threads_grid_color"][1];
+			threads_grid_color.b = jsonConfig["threads_grid_color"][2];
+		}
+
 		if(jsonConfig.contains("results_file_path")) results_file_path = jsonConfig["results_file_path"];
 
 	}

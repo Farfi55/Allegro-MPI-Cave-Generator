@@ -79,6 +79,8 @@ ALLEGRO_TIMER* timer;
 
 ALLEGRO_COLOR wall_color, floor_color;
 int DISPLAY_WIDTH, DISPLAY_HEIGHT;
+
+ALLEGRO_COLOR threads_grid_color;
 #endif // GRAPHIC_MODE
 
 
@@ -282,6 +284,7 @@ void graphic_initialize() {
 
 		wall_color = al_map_rgb(cfg->wall_color.r, cfg->wall_color.g, cfg->wall_color.b);
 		floor_color = al_map_rgb(cfg->floor_color.r, cfg->floor_color.g, cfg->floor_color.b);
+		threads_grid_color = al_map_rgb(cfg->threads_grid_color.r, cfg->threads_grid_color.g, cfg->threads_grid_color.b);
 		if(!al_init()) fprintf(stderr, "Failed to initialize allegro.\n");
 		if(!al_install_keyboard()) fprintf(stderr, "Failed to install keyboard.\n");
 		if(!al_init_font_addon()) fprintf(stderr, "Failed to initialize font addon.\n");
@@ -670,8 +673,9 @@ void parallel_draw_grid() {
 			}
 		}
 		#ifdef DEBUG_MODE
-		ALLEGRO_COLOR red_color = al_map_rgba(125, 125, 200, 255);
-		// al_draw_rectangle(proc_x * cfg->cell_width, proc_y * cfg->cell_height, proc_x2 * cfg->cell_width, proc_y2 * cfg->cell_height, red_color, 1);
+		if(cfg->draw_threads_grid) {
+			al_draw_rectangle(proc_x * cfg->cell_width, proc_y * cfg->cell_height, proc_x2 * cfg->cell_width, proc_y2 * cfg->cell_height, threads_grid_color, 1);
+		}
 		#endif // DEBUG_MODE
 	}
 }
@@ -721,7 +725,7 @@ void parallel_initialize_random_grid() {
 
 	for(int proc = 0; proc < n_procs; proc++) {
 		#ifdef DEBUG_MODE
-		std::cout << "proc: " << proc << " starts at: " << (proc * inner_grid_size) << std::endl;
+		// std::cout << "proc: " << proc << " starts at: " << (proc * inner_grid_size) << std::endl;
 		#endif // DEBUG_MODE
 
 		for(int i = 0; i < my_inner_rows; i++) {
