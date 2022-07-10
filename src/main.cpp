@@ -247,18 +247,9 @@ void initialize(std::string configPath, int x_threads, int y_threads) {
 	parallel_initialize();
 	#endif // PARALLEL_MODE
 
-
 	#ifdef GRAPHIC_MODE
 	graphic_initialize();
 	#endif // GRAPHIC_MODE
-
-	#ifdef DEBUG_MODE
-	// std::cout << "my_rows: " << my_rows << std::endl;
-	// std::cout << "my_cols: " << my_cols << std::endl;
-	// std::cout << "my_inner_rows: " << my_inner_rows << std::endl;
-	// std::cout << "my_inner_cols: " << my_inner_cols << std::endl;
-	// std::cout << "draw_edges: " << cfg->draw_edges << std::endl << std::endl;
-	#endif // DEBUG_MODE
 
 	// create grid and set to 1 every element
 	write_grid = new uint8_t[outer_grid_size];
@@ -310,6 +301,7 @@ void graphic_initialize() {
 		al_register_event_source(queue, al_get_display_event_source(display));
 		al_register_event_source(queue, al_get_keyboard_event_source());
 		al_register_event_source(queue, al_get_timer_event_source(timer));
+		al_start_timer(timer);
 		al_start_timer(timer);
 
 		al_set_app_name("cave generator");
@@ -364,7 +356,7 @@ void parallel_initialize() {
 
 	const int outer_sizes[] = { my_rows, my_cols };
 	const int inner_sizes[] = { my_inner_rows, my_inner_cols };
-	const int starts[] = { radius, radius };
+	const int starts[] = { 0, 0 };
 	MPI_Type_create_subarray(2, outer_sizes, inner_sizes, starts, MPI_ORDER_C, MPI_UINT8_T, &inner_grid_t);
 	MPI_Type_contiguous(inner_grid_size, MPI_UINT8_T, &contiguous_grid_t);
 
@@ -558,12 +550,6 @@ void no_graphic_loop() {
 
 
 void frame_update() {
-	#if defined(PARALLEL_MODE) && defined(DEBUG_MODE)
-	std::cout << "proc: " << my_rank << " at gen " << generation << std::endl;
-	// MPI_Barrier(cave_comm);
-	#endif // PARALLEL_MODE	
-
-
 	#ifdef GRAPHIC_MODE
 	if(my_rank == ROOT_RANK) {
 		al_flip_display();
@@ -661,11 +647,12 @@ void parallel_draw_grid() {
 		int proc_x = (proc % cfg->x_threads) * my_inner_cols + edge_offset;
 		int proc_y = (proc / cfg->x_threads) * my_inner_rows + edge_offset;
 
+		#ifdef DEBUG_MODE
 		int proc_x2 = ((proc % cfg->x_threads) + 1) * my_inner_cols + edge_offset;
 		int proc_y2 = ((proc / cfg->x_threads) + 1) * my_inner_rows + edge_offset;
 
-
 		std::cout << "proc: " << proc << " at " << proc_x << " " << proc_y << std::endl;
+		#endif // DEBUG_MODE
 
 		for(int i = 0; i < my_inner_rows; i++) {
 
@@ -684,7 +671,7 @@ void parallel_draw_grid() {
 		}
 		#ifdef DEBUG_MODE
 		ALLEGRO_COLOR red_color = al_map_rgba(125, 125, 200, 255);
-		al_draw_rectangle(proc_x * cfg->cell_width, proc_y * cfg->cell_height, proc_x2 * cfg->cell_width, proc_y2 * cfg->cell_height, red_color, 1);
+		// al_draw_rectangle(proc_x * cfg->cell_width, proc_y * cfg->cell_height, proc_x2 * cfg->cell_width, proc_y2 * cfg->cell_height, red_color, 1);
 		#endif // DEBUG_MODE
 	}
 }
@@ -805,7 +792,33 @@ void send_rows() {
 }
 
 void send_corners() {
+	if(neighbours_ranks[TOP][LEFT] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * radius + radius;
+		MPI_Isend(&read_grid[start_idx], 1, corner_t, neighbours_ranks[TOP][LEFT], 1005, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
 
+	if(neighbours_ranks[TOP][RIGHT] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * radius + my_inner_cols;
+		MPI_Isend(&read_grid[start_idx], 1, corner_t, neighbours_ranks[TOP][RIGHT], 1006, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
+
+	if(neighbours_ranks[BOTTOM][LEFT] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * my_inner_rows + radius;
+		MPI_Isend(&read_grid[start_idx], 1, corner_t, neighbours_ranks[BOTTOM][LEFT], 1007, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
+
+	if(neighbours_ranks[BOTTOM][RIGHT] != MPI_PROC_NULL) {
+		MPI_Request req;
+		int start_idx = my_cols * my_inner_rows + my_inner_cols;
+		MPI_Isend(&read_grid[start_idx], 1, corner_t, neighbours_ranks[BOTTOM][RIGHT], 1008, cave_comm, &req);
+		MPI_Request_free(&req);
+	}
 }
 
 
@@ -840,7 +853,22 @@ void receive_rows() {
 }
 
 void receive_corners() {
-
+	if(neighbours_ranks[BOTTOM][RIGHT] != MPI_PROC_NULL) {
+		int start_idx = my_cols * (my_inner_rows + radius) + my_inner_cols + radius;
+		MPI_Recv(&read_grid[start_idx], 1, corner_t, neighbours_ranks[BOTTOM][RIGHT], 1005, cave_comm, MPI_STATUS_IGNORE);
+	}
+	if(neighbours_ranks[BOTTOM][LEFT] != MPI_PROC_NULL) {
+		int start_idx = my_cols * (my_inner_rows + radius);
+		MPI_Recv(&read_grid[start_idx], 1, corner_t, neighbours_ranks[BOTTOM][LEFT], 1006, cave_comm, MPI_STATUS_IGNORE);
+	}
+	if(neighbours_ranks[TOP][RIGHT] != MPI_PROC_NULL) {
+		int start_idx = my_inner_cols + radius;
+		MPI_Recv(&read_grid[start_idx], 1, corner_t, neighbours_ranks[TOP][RIGHT], 1007, cave_comm, MPI_STATUS_IGNORE);
+	}
+	if(neighbours_ranks[TOP][LEFT] != MPI_PROC_NULL) {
+		int start_idx = 0;
+		MPI_Recv(&read_grid[start_idx], 1, corner_t, neighbours_ranks[TOP][LEFT], 1008, cave_comm, MPI_STATUS_IGNORE);
+	}
 }
 
 
