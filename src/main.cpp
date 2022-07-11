@@ -13,8 +13,8 @@
 #include "Config.hpp"
 
 #define GRAPHIC_MODE
-#define PARALLEL_MODE
-#define DEBUG_MODE
+// #define PARALLEL_MODE
+// #define DEBUG_MODE
 
 #define ROOT_RANK 0
 
@@ -169,11 +169,9 @@ int main(int argc, char const* argv[])
 		}
 		else if(argv[i] == std::string("-x") && i + 1 < argc) {
 			x_threads = std::stoi(argv[++i]);
-			std::cout << "x_threads: " << x_threads << std::endl;
 		}
 		else if(argv[i] == std::string("-y") && i + 1 < argc) {
 			y_threads = std::stoi(argv[++i]);
-			std::cout << "y_threads: " << y_threads << std::endl;
 		}
 		// else if(argv[i] == std::string("-g")) {
 		// 	cfg->graphic_mode = true;
@@ -186,8 +184,6 @@ int main(int argc, char const* argv[])
 
 	initialize(config_file_path, x_threads, y_threads);
 
-
-	// auto start_time = std::chrono::high_resolution_clock::now();
 	start_time = MPI_Wtime();
 
 	while(is_running) {
@@ -208,10 +204,11 @@ int main(int argc, char const* argv[])
 	// auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
 	if(my_rank == ROOT_RANK) {
-		std::cout << "Total time: " << total_time << std::endl;
-		std::cout << "Communication time: " << communication_time << std::endl;
-		std::cout << "Generation time: " << generation_time << std::endl;
-		std::cout << "Draw time: " << draw_time << std::endl;
+		std::cout << std::endl;
+		std::cout << "Total time:         " << total_time << " s" << std::endl;
+		std::cout << "Communication time: " << communication_time << " s" << std::endl;
+		std::cout << "Generation time:    " << generation_time << " s" << std::endl;
+		std::cout << "Draw time:          " << draw_time << " s" << std::endl;
 
 		if(cfg->results_file_path.empty()) {
 			std::cout << "No results file path specified" << std::endl;
@@ -280,6 +277,7 @@ void initialize(std::string configPath, int x_threads, int y_threads) {
 	inner_grid_size = my_inner_rows * my_inner_cols;
 	outer_grid_size = my_rows * my_cols;
 
+	MPI_Init(NULL, NULL);
 	#ifdef PARALLEL_MODE
 	parallel_initialize();
 	#endif // PARALLEL_MODE
@@ -359,7 +357,6 @@ void graphic_initialize() {
 #ifdef PARALLEL_MODE
 void parallel_initialize() {
 
-	MPI_Init(NULL, NULL);
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
@@ -374,7 +371,7 @@ void parallel_initialize() {
 
 	int my_coords[2];
 	MPI_Cart_coords(cave_comm, my_rank, 2, my_coords);
-	std::cout << "rank: " << my_rank << " coords: " << my_coords[0] << " " << my_coords[1] << std::endl;
+	// std::cout << "rank: " << my_rank << " coords: " << my_coords[0] << " " << my_coords[1] << std::endl;
 
 	for(int i = 0; i < 3; i++) {
 		for(int j = 0; j < 3; j++) {
@@ -417,7 +414,12 @@ void parallel_initialize() {
 void serial_initialize_random_grid() {
 	if(cfg->rand_seed)
 		srand(cfg->rand_seed);
-	else srand(time(0));
+	else {
+		int seed = time(NULL);
+		srand(seed);
+		std::cout << "Random seed: " << seed << std::endl;
+	}
+
 
 	int fill_perc = cfg->initial_fill_perc;
 	for(int i = 0; i < my_rows; i++) {
@@ -462,8 +464,8 @@ void terminate()
 
 	MPI_Comm_free(&cave_comm);
 
-	MPI_Finalize();
 	#endif // PARALLEL_MODE
+	MPI_Finalize();
 }
 
 
@@ -655,7 +657,7 @@ void frame_update() {
 
 	double frame_end_time = MPI_Wtime();
 	frame_times[generation] = frame_end_time - frame_start_time;
-}
+	}
 
 int get_neighbour_walls(int y, int x) {
 	int walls = 0;
@@ -764,7 +766,12 @@ void serial_draw_grid() {
 void parallel_initialize_random_grid() {
 	if(cfg->rand_seed)
 		srand(cfg->rand_seed);
-	else srand(time(0));
+	else {
+		int seed = time(NULL);
+		srand(seed);
+		std::cout << "Random seed: " << seed << std::endl;
+	}
+
 
 	root_grid = new uint8_t[inner_grid_size * n_procs];
 
