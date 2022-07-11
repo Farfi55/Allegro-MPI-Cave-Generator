@@ -12,10 +12,6 @@
 #include <random>
 #include "Config.hpp"
 
-#define GRAPHIC_MODE
-#define PARALLEL_MODE
-// #define DEBUG_MODE
-
 #define ROOT_RANK 0
 
 Config* cfg;
@@ -67,7 +63,8 @@ double draw_time = 0;
 double start_time, end_time;
 double* frame_times;
 
-#ifdef PARALLEL_MODE
+
+
 int neighbours_ranks[3][3];
 
 MPI_Datatype inner_grid_t;
@@ -76,9 +73,8 @@ MPI_Datatype column_t; // for sending/receiving left and right columns
 MPI_Datatype row_t; // for sending/receiving top and bottom rows
 MPI_Datatype corner_t; // for sending/receiving corners
 MPI_Comm cave_comm;
-#endif // PARALLEL_MODE
 
-#ifdef GRAPHIC_MODE
+
 
 ALLEGRO_FONT* font;
 ALLEGRO_DISPLAY* display;
@@ -89,7 +85,6 @@ ALLEGRO_COLOR wall_color, floor_color;
 int DISPLAY_WIDTH, DISPLAY_HEIGHT;
 
 ALLEGRO_COLOR threads_grid_color;
-#endif // GRAPHIC_MODE
 
 
 inline int at(int y, int x) {
@@ -121,9 +116,10 @@ void update_grid();
 void flip_grid();
 void check_generic_settings();
 void no_graphic_loop();
+
 void write_header(std::ofstream& file);
 void write_result(std::ofstream& file);
-
+void end_recap();
 
 void get_config_file_path(int argc, char const* argv[]);
 void get_arg_configs(int argc, char const* argv[]);
@@ -172,54 +168,19 @@ int main(int argc, char const* argv[])
 
 	start_time = MPI_Wtime();
 
-	while(is_running) {
-		#ifdef GRAPHIC_MODE
-		#ifdef PARALLEL_MODE
-		graphic_parallel_loop();
-		#else // NO_PARALLEL_MODE
-		graphic_serial_loop();
-		#endif // PARALLEL_MODE
-		#else // NO_GRAPHIC_MODE
-		no_graphic_loop();
-		#endif // GRAPHIC_MODE
+	if(cfg->show_graphics) {
+		if(cfg->is_parallel)
+			graphic_parallel_loop();
+		else graphic_serial_loop();
 	}
+	else no_graphic_loop();
 
 	end_time = MPI_Wtime();
 	total_time = end_time - start_time;
-	// auto end_time = std::chrono::high_resolution_clock::now();
-	// auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-	if(my_rank == ROOT_RANK) {
-		std::cout << std::endl;
-		std::cout << "Total time:         " << total_time << " s" << std::endl;
-		std::cout << "Communication time: " << communication_time << " s" << std::endl;
-		std::cout << "Generation time:    " << generation_time << " s" << std::endl;
-		std::cout << "Draw time:          " << draw_time << " s" << std::endl;
-
-		if(cfg->results_file_path.empty()) {
-			std::cout << "No results file path specified" << std::endl;
-		}
-		else {
-			std::ofstream file;
-			if(std::filesystem::exists(cfg->results_file_path)) {
-				file.open(cfg->results_file_path, std::ios::app);
-			}
-			else {
-				std::cout << "Creating results file" << std::endl;
-				file.open(cfg->results_file_path);
-				write_header(file);
-			}
-			write_result(file);
-			file.close();
-
-			std::cout << "Results written to " << cfg->results_file_path << std::endl;
-		}
-	}
-
-
+	end_recap();
 
 	terminate();
-
 	return 0;
 }
 
@@ -253,13 +214,14 @@ void initialize(int argc, char const* argv[]) {
 
 	// checkGeneralSettings();
 
-	#ifdef PARALLEL_MODE
-	my_inner_rows = cfg->rows / cfg->y_threads;
-	my_inner_cols = cfg->cols / cfg->x_threads;
-	#else 
-	my_inner_rows = cfg->rows;
-	my_inner_cols = cfg->cols;
-	#endif // PARALLEL_MODE
+	if(cfg->is_parallel) {
+		my_inner_rows = cfg->rows / cfg->y_threads;
+		my_inner_cols = cfg->cols / cfg->x_threads;
+	}
+	else {
+		my_inner_rows = cfg->rows;
+		my_inner_cols = cfg->cols;
+	}
 
 	my_rows = my_inner_rows + 2 * radius;
 	my_cols = my_inner_cols + 2 * radius;
@@ -267,13 +229,11 @@ void initialize(int argc, char const* argv[]) {
 	outer_grid_size = my_rows * my_cols;
 
 	MPI_Init(NULL, NULL);
-	#ifdef PARALLEL_MODE
-	parallel_initialize();
-	#endif // PARALLEL_MODE
+	if(cfg->is_parallel)
+		parallel_initialize();
 
-	#ifdef GRAPHIC_MODE
-	graphic_initialize();
-	#endif // GRAPHIC_MODE
+	if(cfg->show_graphics)
+		graphic_initialize();
 
 	// create grid and set to 1 every element
 	write_grid = new uint8_t[outer_grid_size];
@@ -281,19 +241,18 @@ void initialize(int argc, char const* argv[]) {
 	std::fill_n(read_grid, outer_grid_size, 1);
 
 
-	#ifdef PARALLEL_MODE
-	if(my_rank == ROOT_RANK) {
-		parallel_initialize_random_grid();
+	if(cfg->is_parallel) {
+		if(my_rank == ROOT_RANK) {
+			parallel_initialize_random_grid();
+		}
+		scatter_initial_grid();
 	}
-	scatter_initial_grid();
-	#else
-	serial_initialize_random_grid();
-	#endif // PARALLEL_MODE
+	else serial_initialize_random_grid();
+
 	std::copy_n(read_grid, outer_grid_size, write_grid);
 
 }
 
-#ifdef GRAPHIC_MODE
 void graphic_initialize() {
 	if(my_rank == ROOT_RANK) {
 		check_graphic_settings();
@@ -332,7 +291,6 @@ void graphic_initialize() {
 		al_set_app_name("cave generator");
 	}
 }
-#endif // GRAPHIC_MODE
 
 
 
@@ -343,7 +301,6 @@ void graphic_initialize() {
  *  --------------------------------------------------------------------------------
  * ==================================================================================
  */
-#ifdef PARALLEL_MODE
 void parallel_initialize() {
 
 
@@ -360,16 +317,12 @@ void parallel_initialize() {
 
 	int my_coords[2];
 	MPI_Cart_coords(cave_comm, my_rank, 2, my_coords);
-	// std::cout << "rank: " << my_rank << " coords: " << my_coords[0] << " " << my_coords[1] << std::endl;
 
 	for(int i = 0; i < 3; i++) {
 		for(int j = 0; j < 3; j++) {
 			const int coords[] = { my_coords[0] + i - 1,my_coords[1] + j - 1 };
 			if(isValidCoord(coords)) {
 				MPI_Cart_rank(cave_comm, coords, &neighbours_ranks[i][j]);
-				#ifdef DEBUG_MODE
-				std::printf("my_rank %d, neighbours_ranks[%d][%d]: %d\n", my_rank, i, j, neighbours_ranks[i][j]);
-				#endif // DEBUG_MODE
 			}
 			else {
 				neighbours_ranks[i][j] = MPI_PROC_NULL; // -1
@@ -398,7 +351,6 @@ void parallel_initialize() {
 
 }
 
-#else
 
 void serial_initialize_random_grid() {
 	if(cfg->rand_seed)
@@ -420,40 +372,36 @@ void serial_initialize_random_grid() {
 	}
 }
 
-#endif // PARALLEL_MODE
 
 
 void terminate()
 {
-	#ifdef GRAPHIC_MODE
-	if(my_rank == ROOT_RANK) {
+	if(my_rank == ROOT_RANK && cfg->show_graphics) {
 		al_uninstall_keyboard();
 		al_destroy_event_queue(queue);
 		al_destroy_display(display);
 		al_destroy_font(font);
 	}
-	#endif // GRAPHIC_MODE
 
 	delete cfg;
 	delete[] read_grid;
 	delete[] write_grid;
 	delete[] frame_times;
 
-	#ifdef PARALLEL_MODE
-	if(my_rank == ROOT_RANK) {
-		delete[] root_grid;
+	if(cfg->is_parallel) {
+		if(my_rank == ROOT_RANK) {
+			delete[] root_grid;
+		}
+
+		MPI_Type_free(&inner_grid_t);
+		MPI_Type_free(&contiguous_grid_t);
+		MPI_Type_free(&column_t);
+		MPI_Type_free(&row_t);
+		MPI_Type_free(&corner_t);
+
+		MPI_Comm_free(&cave_comm);
+
 	}
-
-
-	MPI_Type_free(&inner_grid_t);
-	MPI_Type_free(&contiguous_grid_t);
-	MPI_Type_free(&column_t);
-	MPI_Type_free(&row_t);
-	MPI_Type_free(&corner_t);
-
-	MPI_Comm_free(&cave_comm);
-
-	#endif // PARALLEL_MODE
 	MPI_Finalize();
 }
 
@@ -464,9 +412,6 @@ void check_general_settings() {
 
 }
 
-
-
-#ifdef PARALLEL_MODE
 
 void check_parallel_settings() {
 	if(cfg->x_threads < 1 || cfg->y_threads < 1) {
@@ -492,10 +437,6 @@ void check_parallel_settings() {
 		exit();
 	}
 }
-#endif // PARALLEL_MODE
-
-
-#ifdef GRAPHIC_MODE
 
 void check_graphic_settings() {
 	if(cfg->cols * cfg->rows > 1382400) {
@@ -503,7 +444,6 @@ void check_graphic_settings() {
 		exit();
 	}
 }
-#endif // GRAPHIC_MODE
 
 
 
@@ -514,18 +454,39 @@ void check_graphic_settings() {
  *  --------------------------------------------------------------------------------
  * ==================================================================================
  */
-#ifdef GRAPHIC_MODE
 
-#ifdef PARALLEL_MODE
 void graphic_parallel_loop() {
-	if(my_rank == ROOT_RANK) {
+	while(is_running) {
+		if(my_rank == ROOT_RANK) {
+			ALLEGRO_EVENT event;
+			al_wait_for_event(queue, &event);
+			if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+				is_running = false;
+				std::cout << "Abortings..." << std::endl;
+				MPI_Abort(MPI_COMM_WORLD, 0);
+			}
+			else if(event.type == ALLEGRO_EVENT_TIMER) {
+				frame_update();
+				if(++generation == cfg->last_generation) {
+					is_running = false;
+				}
+			}
+		}
+		else {
+			frame_update();
+			if(++generation == cfg->last_generation) {
+				is_running = false;
+			}
+		}
+	}
+}
+
+void graphic_serial_loop() {
+	while(is_running) {
 		ALLEGRO_EVENT event;
 		al_wait_for_event(queue, &event);
-		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
 			is_running = false;
-			std::cout << "Abortings..." << std::endl;
-			MPI_Abort(MPI_COMM_WORLD, 0);
-		}
 		else if(event.type == ALLEGRO_EVENT_TIMER) {
 			frame_update();
 			if(++generation == cfg->last_generation) {
@@ -533,107 +494,77 @@ void graphic_parallel_loop() {
 			}
 		}
 	}
-	else {
-		frame_update();
-		if(++generation == cfg->last_generation) {
-			is_running = false;
-		}
-	}
 }
 
-#else // NO_PARALLEL_MODE
-
-void graphic_serial_loop() {
-	ALLEGRO_EVENT event;
-	al_wait_for_event(queue, &event);
-	if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
-		is_running = false;
-	else if(event.type == ALLEGRO_EVENT_TIMER) {
-		frame_update();
-		if(++generation == cfg->last_generation) {
-			is_running = false;
-		}
-	}
-}
-
-#endif // PARALLEL_MODE
-
-#else // NO_GRAPHIC_MODE
 
 void no_graphic_loop() {
-	frame_update();
-	if(++generation == cfg->last_generation) {
-		is_running = false;
+	while(is_running) {
+		frame_update();
+		if(++generation == cfg->last_generation) {
+			is_running = false;
+		}
 	}
 }
-
-#endif // GRAPHIC_MODE
-
 
 void frame_update() {
 	double frame_start_time = MPI_Wtime();
-	#ifdef GRAPHIC_MODE
-	if(my_rank == ROOT_RANK) {
-		double start_draw_time = MPI_Wtime();
-		al_flip_display();
-		al_clear_to_color(wall_color);
+	if(cfg->show_graphics) {
+		if(my_rank == ROOT_RANK) {
+			double start_draw_time = MPI_Wtime();
+			al_flip_display();
+			al_clear_to_color(wall_color);
 
-		#ifdef PARALLEL_MODE 
-		//receive the grid from the other processes
-		double receive_start_time = MPI_Wtime();
-		gather_grid();
-		communication_time += MPI_Wtime() - receive_start_time;
+			if(cfg->is_parallel) {
+				//receive the grid from the other processes
+				double receive_start_time = MPI_Wtime();
+				gather_grid();
+				communication_time += MPI_Wtime() - receive_start_time;
 
-		parallel_draw_grid();
-		#else  
-		serial_draw_grid();
-		#endif // PARALLEL_MODE
+				parallel_draw_grid();
+			}
+			else {
+				serial_draw_grid();
+			}
 
-		double end_draw_time = MPI_Wtime();
-		draw_time += end_draw_time - start_draw_time;
+			double end_draw_time = MPI_Wtime();
+			draw_time += end_draw_time - start_draw_time;
+		}
+		else { // my_rank != ROOT_RANK
+
+			// send read_grid to root
+			double receive_start_time = MPI_Wtime();
+			gather_grid();
+			communication_time += MPI_Wtime() - receive_start_time;
+		}
 	}
-	else {
-		// send read_grid to root
-		#ifdef PARALLEL_MODE
-		double receive_start_time = MPI_Wtime();
-		gather_grid();
-		communication_time += MPI_Wtime() - receive_start_time;
-		#endif // PARALLEL_MODE
 
+	if(cfg->is_parallel) {
+		// send columns to other processes
+		double comms_start_time = MPI_Wtime();
+		send_columns();
+
+		// send rows to other processes
+		send_rows();
+
+		// send corners to other processes
+		send_corners();
+
+		// receive columns from other processes
+		receive_columns();
+
+		// receive rows from other processes
+		receive_rows();
+
+		// receive corners from other processes
+		receive_corners();
+		communication_time += MPI_Wtime() - comms_start_time;
 	}
-	#endif // GRAPHIC_MODE
 
-	#ifdef PARALLEL_MODE
-	// send columns to other processes
-	double comms_start_time = MPI_Wtime();
-	send_columns();
-
-	// send rows to other processes
-	send_rows();
-
-	// send corners to other processes
-	send_corners();
-
-	// receive columns from other processes
-	receive_columns();
-
-	// receive rows from other processes
-	receive_rows();
-
-	// receive corners from other processes
-	receive_corners();
-	communication_time += MPI_Wtime() - comms_start_time;
-
-	#endif // PARALLEL_MODE
 
 	double generation_start_time = MPI_Wtime();
 	update_grid();
 	generation_time += MPI_Wtime() - generation_start_time;
 	std::swap(read_grid, write_grid);
-
-	// #ifdef PARALLEL_MODE
-	// MPI_Barrier(cave_comm);
-	// #endif // PARALLEL_MODE	
 
 	double frame_end_time = MPI_Wtime();
 	frame_times[generation] = frame_end_time - frame_start_time;
@@ -674,8 +605,7 @@ void update_grid() {
  *  --------------------------------------------------------------------------------
  * ==================================================================================
  */
-#ifdef GRAPHIC_MODE
-#ifdef PARALLEL_MODE
+
 void parallel_draw_grid() {
 	// offset in cells, not pixels
 	int edge_offset = edge_offset = cfg->draw_edges ? radius : 0;
@@ -685,10 +615,9 @@ void parallel_draw_grid() {
 		int proc_x = (proc % cfg->x_threads) * my_inner_cols + edge_offset;
 		int proc_y = (proc / cfg->x_threads) * my_inner_rows + edge_offset;
 
-		#ifdef DEBUG_MODE
 		int proc_x2 = ((proc % cfg->x_threads) + 1) * my_inner_cols + edge_offset;
 		int proc_y2 = ((proc / cfg->x_threads) + 1) * my_inner_rows + edge_offset;
-		#endif // DEBUG_MODE
+
 
 		for(int i = 0; i < my_inner_rows; i++) {
 
@@ -705,14 +634,12 @@ void parallel_draw_grid() {
 				}
 			}
 		}
-		#ifdef DEBUG_MODE
+
 		if(cfg->draw_threads_grid) {
 			al_draw_rectangle(proc_x * cfg->cell_width, proc_y * cfg->cell_height, proc_x2 * cfg->cell_width, proc_y2 * cfg->cell_height, threads_grid_color, 1);
 		}
-		#endif // DEBUG_MODE
 	}
 }
-#endif // PARALLEL_MODE
 
 
 void serial_draw_grid() {
@@ -730,10 +657,9 @@ void serial_draw_grid() {
 		}
 	}
 }
-#endif
 
 
-#ifdef PARALLEL_MODE
+
 /*
  * ==================================================================================
  *  --------------------------------------------------------------------------------
@@ -752,20 +678,10 @@ void parallel_initialize_random_grid() {
 		std::cout << "Random seed: " << seed << std::endl;
 	}
 
-
 	root_grid = new uint8_t[inner_grid_size * n_procs];
 
-	// for(int i = 0; i < tot_inner_rows; i++) {
-	// 	for(int j = 0; j < tot_inner_cols; j++) {
-	// 		root_grid[i * tot_inner_cols + j] = (rand() % 100) < settings->initial_fill_perc;
-	// 	}
-	// }
 
 	for(int proc = 0; proc < n_procs; proc++) {
-		#ifdef DEBUG_MODE
-		// std::cout << "proc: " << proc << " starts at: " << (proc * inner_grid_size) << std::endl;
-		#endif // DEBUG_MODE
-
 		for(int i = 0; i < my_inner_rows; i++) {
 			for(int j = 0; j < my_inner_cols; j++) {
 				int idx = (proc * inner_grid_size) + (i * my_inner_cols) + j;
@@ -915,11 +831,6 @@ void receive_corners() {
 
 
 
-#endif // PARALLEL_MODE
-
-
-
-
 void write_header(std::ofstream& file) {
 	std::string separator = ",";
 	file << "total_time" << separator
@@ -928,6 +839,8 @@ void write_header(std::ofstream& file) {
 		<< "draw_time" << separator
 		<< "start_time" << separator
 		<< "end_time" << separator
+		<< "show_graphics" << separator
+		<< "is_parallel" << separator
 		<< "n_procs" << separator
 		<< "x_threads" << separator
 		<< "y_threads" << separator
@@ -952,6 +865,8 @@ void write_result(std::ofstream& file) {
 		<< draw_time << separator
 		<< start_time << separator
 		<< end_time << separator
+		<< cfg->show_graphics << separator
+		<< cfg->is_parallel << separator
 		<< n_procs << separator
 		<< cfg->x_threads << separator
 		<< cfg->y_threads << separator
@@ -971,6 +886,37 @@ void get_config_file_path(int argc, char const* argv[]) {
 		}
 	}
 }
+
+void end_recap() {
+	if(my_rank != ROOT_RANK) return;
+
+	std::cout << std::endl;
+	std::cout << "Total time:         " << total_time << " s" << std::endl;
+	std::cout << "Communication time: " << communication_time << " s" << std::endl;
+	std::cout << "Generation time:    " << generation_time << " s" << std::endl;
+	std::cout << "Draw time:          " << draw_time << " s" << std::endl;
+
+	if(cfg->results_file_path.empty()) {
+		std::cout << "No results file path specified" << std::endl;
+	}
+	else {
+		std::ofstream file;
+		if(std::filesystem::exists(cfg->results_file_path)) {
+			file.open(cfg->results_file_path, std::ios::app);
+		}
+		else {
+			std::cout << "Creating results file" << std::endl;
+			file.open(cfg->results_file_path);
+			write_header(file);
+		}
+		write_result(file);
+		file.close();
+
+		std::cout << "Results written to " << cfg->results_file_path << std::endl;
+	}
+
+}
+
 
 void get_arg_configs(int argc, char const* argv[]) {
 	for(int i = 0; i < argc; i++) {
