@@ -13,6 +13,10 @@ struct rgb { int r; int g; int b; };
 
 struct Config
 {
+	bool show_graphics = true;
+
+	bool is_parallel = true;
+
 	// seed used for random number generation
 	// 0 means random seed
 	int rand_seed = 0;
@@ -65,7 +69,7 @@ struct Config
 	std::string results_file_path = "";
 
 
-	Config() : Config("./config/default.cfg") {}
+	// Config() : Config("./config/default.cfg") {}
 
 	Config(std::string configFile) {
 
@@ -80,12 +84,18 @@ struct Config
 			}
 			else {
 				std::cout << "Exiting..." << std::endl;
+				MPI_Abort(MPI_COMM_WORLD, 1);
 				exit(1);
 			}
 		}
 
 		json jsonConfig;
 		config >> jsonConfig;
+
+		if(jsonConfig.contains("show_graphics")) show_graphics = jsonConfig["show_graphics"];
+
+		if(jsonConfig.contains("is_parallel")) is_parallel = jsonConfig["is_parallel"];
+
 
 		if(jsonConfig.contains("rand_seed")) rand_seed = jsonConfig["rand_seed"];
 		if(jsonConfig.contains("last_generation")) last_generation = jsonConfig["last_generation"];

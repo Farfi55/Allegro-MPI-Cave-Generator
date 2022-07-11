@@ -13,7 +13,7 @@
 #include "Config.hpp"
 
 #define GRAPHIC_MODE
-// #define PARALLEL_MODE
+#define PARALLEL_MODE
 // #define DEBUG_MODE
 
 #define ROOT_RANK 0
@@ -113,7 +113,7 @@ inline bool isCoordsEqual(int coords1[], int coords2[]) {
 	return coords1[0] == coords2[0] && coords1[1] == coords2[1];
 }
 
-void initialize(std::string configPath, int x_threads, int y_threads);
+void initialize(int argc, char const* argv[]);
 void serial_initialize_random_grid();
 void terminate();
 void frame_update();
@@ -125,7 +125,11 @@ void write_header(std::ofstream& file);
 void write_result(std::ofstream& file);
 
 
+void get_config_file_path(int argc, char const* argv[]);
+void get_arg_configs(int argc, char const* argv[]);
 
+void print_help();
+void print_config_help();
 
 // graphic only
 void graphic_initialize();
@@ -151,6 +155,9 @@ void receive_columns();
 void receive_rows();
 void receive_corners();
 
+inline void exit();
+
+
 /*
  * ==================================================================================
  *  --------------------------------------------------------------------------------
@@ -161,28 +168,7 @@ void receive_corners();
 
 int main(int argc, char const* argv[])
 {
-
-	int x_threads = 0, y_threads = 0;
-	for(int i = 0; i < argc; i++) {
-		if(argv[i] == std::string("-c") && i + 1 < argc) {
-			config_file_path = argv[++i];
-		}
-		else if(argv[i] == std::string("-x") && i + 1 < argc) {
-			x_threads = std::stoi(argv[++i]);
-		}
-		else if(argv[i] == std::string("-y") && i + 1 < argc) {
-			y_threads = std::stoi(argv[++i]);
-		}
-		// else if(argv[i] == std::string("-g")) {
-		// 	cfg->graphic_mode = true;
-		// }
-		// else if(argv[i] == std::string("-p")) {
-		// 	cfg->parallel_mode = true;
-		// }
-	}
-
-
-	initialize(config_file_path, x_threads, y_threads);
+	initialize(argc, argv);
 
 	start_time = MPI_Wtime();
 
@@ -237,6 +223,10 @@ int main(int argc, char const* argv[])
 	return 0;
 }
 
+
+
+
+
 /*
  * ==================================================================================
  *  --------------------------------------------------------------------------------
@@ -245,11 +235,12 @@ int main(int argc, char const* argv[])
  * ==================================================================================
  */
 
-void initialize(std::string configPath, int x_threads, int y_threads) {
-	if(!configPath.empty())
-		cfg = new Config(configPath);
-	else
-		cfg = new Config();
+void initialize(int argc, char const* argv[]) {
+	get_config_file_path(argc, argv);
+
+	cfg = new Config(config_file_path);
+	get_arg_configs(argc, argv);
+
 
 	tot_inner_rows = cfg->rows;
 	tot_inner_cols = cfg->cols;
@@ -257,8 +248,6 @@ void initialize(std::string configPath, int x_threads, int y_threads) {
 	max_neighbours = (radius * (radius + 1) * 4);
 	half_neighbours = max_neighbours / 2;
 
-	if(x_threads) cfg->x_threads = x_threads;
-	if(y_threads) cfg->y_threads = y_threads;
 
 	frame_times = new double[cfg->last_generation];
 
@@ -482,20 +471,17 @@ void check_general_settings() {
 void check_parallel_settings() {
 	if(cfg->x_threads < 1 || cfg->y_threads < 1) {
 		std::cout << "x_threads and y_threads must be at least 1" << std::endl;
-		MPI_Abort(MPI_COMM_WORLD, 1);
-		exit(1);
+		exit();
 	}
 	if(cfg->rows % cfg->y_threads != 0) {
 		std::cout << "Rows have to be divisible by the y_threads" << std::endl;
 		std::cout << "rows: " << cfg->rows << " y_threads: " << cfg->y_threads << std::endl;
-		MPI_Abort(MPI_COMM_WORLD, 1);
-		exit(1);
+		exit();
 	}
 	if(cfg->cols % cfg->x_threads != 0) {
 		std::cout << "Cols have to be divisible by the x_threads" << std::endl;
 		std::cout << "cols: " << cfg->cols << " x_threads: " << cfg->x_threads << std::endl;
-		MPI_Abort(MPI_COMM_WORLD, 1);
-		exit(1);
+		exit();
 	}
 	if(cfg->y_threads * cfg->x_threads != n_procs) {
 			// make sure the product of dims is equal to the number of processes
@@ -503,8 +489,7 @@ void check_parallel_settings() {
 		std::cout << "number of processes: " << n_procs << std::endl;
 		std::cout << "number of threads per row: " << cfg->y_threads << std::endl;
 		std::cout << "number of threads per column: " << cfg->x_threads << std::endl;
-		MPI_Abort(MPI_COMM_WORLD, 1);
-		exit(1);
+		exit();
 	}
 }
 #endif // PARALLEL_MODE
@@ -515,12 +500,7 @@ void check_parallel_settings() {
 void check_graphic_settings() {
 	if(cfg->cols * cfg->rows > 1382400) {
 		std::cout << "Grid is too large for graphic mode" << std::endl;
-
-		#ifdef PARALLEL_MODE
-		MPI_Abort(MPI_COMM_WORLD, 1);
-		#endif // PARALLEL_MODE
-		exit(1);
-
+		exit();
 	}
 }
 #endif // GRAPHIC_MODE
@@ -657,7 +637,7 @@ void frame_update() {
 
 	double frame_end_time = MPI_Wtime();
 	frame_times[generation] = frame_end_time - frame_start_time;
-	}
+}
 
 int get_neighbour_walls(int y, int x) {
 	int walls = 0;
@@ -979,4 +959,108 @@ void write_result(std::ofstream& file) {
 	print_frame_times(file);
 
 	file << std::endl;
+}
+
+
+
+void get_config_file_path(int argc, char const* argv[]) {
+	for(int i = 0; i < argc; i++) {
+		if((argv[i] == std::string("-c") || argv[i] == std::string("--config")) && i + 1 < argc) {
+			config_file_path = argv[++i];
+			return;
+		}
+	}
+}
+
+void get_arg_configs(int argc, char const* argv[]) {
+	for(int i = 0; i < argc; i++) {
+		if(argv[i] == std::string("-h") || argv[i] == std::string("--help")) {
+			print_help();
+			exit();
+		}
+		if(argv[i] == std::string("-hc") || argv[i] == std::string("--help-config")) {
+			print_config_help();
+			exit();
+		}
+		else if(argv[i] == std::string("-g") || argv[i] == std::string("--graphic")) {
+			cfg->show_graphics = true;
+		}
+		else if(argv[i] == std::string("-G") || argv[i] == std::string("--no-graphic")) {
+			cfg->show_graphics = false;
+		}
+		else if(argv[i] == std::string("-p") || argv[i] == std::string("--parallel")) {
+			cfg->is_parallel = true;
+		}
+		else if(argv[i] == std::string("-P") || argv[i] == std::string("-s") || argv[i] == std::string("--serial")) {
+			cfg->is_parallel = false;
+		}
+		else if(argv[i] == std::string("-x") && i + 1 < argc) {
+			cfg->x_threads = std::stoi(argv[++i]);
+		}
+		else if(argv[i] == std::string("-y") && i + 1 < argc) {
+			cfg->y_threads = std::stoi(argv[++i]);
+		}
+		else if(argv[i] == std::string("-o")) {
+			cfg->results_file_path = argv[++i];
+		}
+	}
+}
+
+void print_help() {
+	std::cout << "Usage: mpirun -np <num_processes> ./cavegen [options]" << std::endl
+		<< std::endl
+		<< "Options:" << std::endl
+		<< "-h, --help: Print this help message" << std::endl
+		<< "-hc, --help-config: Print the config file help message" << std::endl
+		<< "-c, --config <path>: Path to config file" << std::endl
+		<< "-x <int>: Number of threads on the x axis" << std::endl
+		<< "-y <int>: Number of threads on the y axis" << std::endl
+		<< "-g, --graphic: Show graphics" << std::endl
+		<< "-G, --no-graphic: Don't show graphics" << std::endl
+		<< "-nog: same as -G" << std::endl
+		<< "-p, --parallel: Run in parallel" << std::endl
+		<< "-P, -s, --serial: Run in serial" << std::endl
+		<< "-o <path>: Path to results file" << std::endl
+		<< std::endl
+		<< "Example: " << std::endl
+		<< "mpirun -np 6 ./cavegen -c custom-config.cfg -p -g -x 3 -y 2" << std::endl
+		<< std::endl
+		<< "If no config file is specified, the default config file will be used" << std::endl
+		<< "If no results file path is specified, the results will not be written to a file" << std::endl
+		<< std::endl;
+}
+
+void print_config_help() {
+
+	std::cout << "The config file is a JSON file with the following format:" << std::endl
+		<< "{" << std::endl
+		<< "	\"[config_key]\": <config_value>" << std::endl
+		<< "}" << std::endl
+		<< std::endl
+		<< "The following config keys are supported:" << std::endl
+		<< "cols: <int>" << std::endl
+		<< "rows: <int>" << std::endl
+		<< "rand_seed: <int>" << std::endl
+		<< "last_generation: <int>" << std::endl
+		<< "show_graphics: <bool>" << std::endl
+		<< "is_parallel: <bool>" << std::endl
+		<< "x_threads: <int>" << std::endl
+		<< "y_threads: <int>" << std::endl
+		<< "results_file_path: <string>" << std::endl
+		<< "roughness: <int>" << std::endl
+		<< "neighbour_radius: <int>" << std::endl
+		<< "initial_fill_perc: <int>" << std::endl
+		<< "cell_size: <int>" << std::endl
+		<< "cell_width: <int>" << std::endl
+		<< "cell_height: <int>" << std::endl
+		<< "draw_edges: <bool>" << std::endl
+		<< "draw_threads_grid: <bool>" << std::endl
+		<< "wall_color: [r, g, b], where r,g,b are int between 0-255" << std::endl
+		<< "floor_color: [r, g, b], where r,g,b are int between 0-255" << std::endl
+		<< "threads_grid_color: [r, g, b], where r,g,b are int between 0-255" << std::endl;
+}
+
+inline void exit() {
+	MPI_Abort(MPI_COMM_WORLD, 1);
+	exit(1);
 }
