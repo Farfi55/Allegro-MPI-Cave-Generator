@@ -14,8 +14,10 @@ Inspired by this [video](https://youtu.be/v7yyZZjF1z4)
 
 ### dependencies
 
-* [allegro5](https://github.com/liballeg/allegro5)
-* [mpich](https://github.com/pmodels/mpich)
+* c++ 17
+* makefile
+* [allegro5](https://github.com/liballeg/allegro5) for rendering
+* [mpich](https://github.com/pmodels/mpich) or [open-mpi](https://github.com/open-mpi/ompi) for parellization
 
 ### building
 
@@ -25,39 +27,31 @@ cd ./Allegro-MPI-Cave-Generator
 make
 ```
 
-inside `src/main.cpp` there are some `#define` that deeply change how the software will be built
-
-* `GRAPHIC_MODE`: utilizes [allegro5](https://github.com/liballeg/allegro5) to render.
-* `PARALLEL_MODE`: utilizes [mpich](https://github.com/pmodels/mpich) to distribute the workload among a grid of threads
-* `DEBUG_MODE`: displayes extra text i used to debug during development
-
 ## Running
 
-if built with `PARALLEL_MODE`:
-
 ```sh
-mpirun -np <n_procs> ./out/main [-c config_file] [-x x_threads] [-y y_threads]
+mpirun -np <n_procs> ./bin/cavegen [options]
 ```
 
-if built without without `PARALLEL_MODE`:
-
-just run it with `./out/main`
+for more info use: `./bin/cavegen -h`
 
 ### example
 
-`mpirun -np 6 ./out/main -c ./config/my_config.cfg -x 3 -y 2`
+`mpirun -np 6 bin/cavegen -c ./config/my_config.cfg -p -x 3 -y 2`
 
-this will:
-
-* run `./out/main` on 6 threads
-* load the config file `./config/my_config.cfg`
-* set 3 threads on the x axis
-* set 2 threads on the y axis
+* `mpirun -np 6 bin/cavegen` run program on 6 threads
+* `-c ./config/my_config.cfg` load the specified config file
+* `-p`: run in parallel mode
+* `-x 3`: set 3 threads on the x axis
+* `-y 2`: set 2 threads on the y axis
 
 ## Configuration
 
-when running you can set a custom configuration with the option `-c config_file`:
+when running you can set a custom configuration with the option `-c config_file`
 
+for more info on the configuration options use `cavegen -hc`
+
+<!-- 
 configuration options:
 
 * "rand_seed": 1337
@@ -88,4 +82,8 @@ configuration options:
   * how many cells to consider in each direction when calculating the walls around a cell
 * "roughness": 1,
   * threshold for the cell to become as it's neighbour majority
+ -->
 
+## showcase
+
+![cavegen showcase](videos/cavegen.gif)
