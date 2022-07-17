@@ -383,9 +383,6 @@ void terminate()
 		al_destroy_font(font);
 	}
 
-	delete cfg;
-	delete[] read_grid;
-	delete[] write_grid;
 	// delete[] frame_times;
 
 	if(cfg->is_parallel) {
@@ -403,6 +400,10 @@ void terminate()
 
 	}
 	MPI_Finalize();
+	
+	delete cfg;
+	delete[] read_grid;
+	delete[] write_grid;
 }
 
 
