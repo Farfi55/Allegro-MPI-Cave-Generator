@@ -55,7 +55,7 @@ struct Config
 	bool draw_threads_grid = true;
 
 	// GRAPHIC ONLY
-	int max_frame_rate = 24;
+	int max_frame_rate = 60;
 
 	// GRAPHIC ONLY
 	rgb wall_color{ 0, 0, 0 };

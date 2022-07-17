@@ -400,7 +400,7 @@ void terminate()
 
 	}
 	MPI_Finalize();
-	
+
 	delete cfg;
 	delete[] read_grid;
 	delete[] write_grid;
@@ -462,9 +462,8 @@ void graphic_parallel_loop() {
 			ALLEGRO_EVENT event;
 			al_wait_for_event(queue, &event);
 			if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
-				is_running = false;
 				std::cout << "Abortings..." << std::endl;
-				MPI_Abort(MPI_COMM_WORLD, 0);
+				exit();
 			}
 			else if(event.type == ALLEGRO_EVENT_TIMER) {
 				frame_update();
@@ -486,8 +485,10 @@ void graphic_serial_loop() {
 	while(is_running) {
 		ALLEGRO_EVENT event;
 		al_wait_for_event(queue, &event);
-		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
-			is_running = false;
+		if(event.type == ALLEGRO_EVENT_KEY_UP || event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+			std::cout << "Abortings..." << std::endl;
+			exit();
+		}
 		else if(event.type == ALLEGRO_EVENT_TIMER) {
 			frame_update();
 			if(++generation == cfg->last_generation) {
