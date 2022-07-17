@@ -61,7 +61,7 @@ double communication_time = 0;
 double generation_time = 0;
 double draw_time = 0;
 double start_time, end_time;
-double* frame_times;
+// double* frame_times;
 
 
 
@@ -210,7 +210,7 @@ void initialize(int argc, char const* argv[]) {
 	half_neighbours = max_neighbours / 2;
 
 
-	frame_times = new double[cfg->last_generation];
+	// frame_times = new double[cfg->last_generation];
 
 	// checkGeneralSettings();
 
@@ -386,7 +386,7 @@ void terminate()
 	delete cfg;
 	delete[] read_grid;
 	delete[] write_grid;
-	delete[] frame_times;
+	// delete[] frame_times;
 
 	if(cfg->is_parallel) {
 		if(my_rank == ROOT_RANK) {
@@ -507,7 +507,7 @@ void no_graphic_loop() {
 }
 
 void frame_update() {
-	double frame_start_time = MPI_Wtime();
+	// double frame_start_time = MPI_Wtime();
 	if(cfg->show_graphics) {
 		if(my_rank == ROOT_RANK) {
 			double start_draw_time = MPI_Wtime();
@@ -566,8 +566,8 @@ void frame_update() {
 	generation_time += MPI_Wtime() - generation_start_time;
 	std::swap(read_grid, write_grid);
 
-	double frame_end_time = MPI_Wtime();
-	frame_times[generation] = frame_end_time - frame_start_time;
+	// double frame_end_time = MPI_Wtime();
+	// frame_times[generation] = frame_end_time - frame_start_time;
 }
 
 int get_neighbour_walls(int y, int x) {
@@ -844,18 +844,19 @@ void write_header(std::ofstream& file) {
 		<< "n_procs" << separator
 		<< "x_threads" << separator
 		<< "y_threads" << separator
-		<< "config_file_path" << separator
-		<< "frame_timings" << std::endl;
+		<< "config_file_path" << std::endl;
+		// << "config_file_path" << separator
+		// << "frame_timings" << std::endl;
 }
 
 
-void print_frame_times(std::ostream& os) {
-	os << '[';
-	for(int i = 0; i < cfg->last_generation; i++) {
-		os << frame_times[i] << ' ';
-	}
-	os << ']';
-}
+// void print_frame_times(std::ostream& os) {
+// 	os << '[';
+// 	for(int i = 0; i < cfg->last_generation; i++) {
+// 		os << frame_times[i] << ' ';
+// 	}
+// 	os << ']';
+// }
 
 void write_result(std::ofstream& file) {
 	std::string separator = ",";
@@ -870,10 +871,10 @@ void write_result(std::ofstream& file) {
 		<< n_procs << separator
 		<< cfg->x_threads << separator
 		<< cfg->y_threads << separator
-		<< config_file_path << separator;
-	print_frame_times(file);
+		<< config_file_path << std::endl;
+	// print_frame_times(file);
 
-	file << std::endl;
+	// file << std::endl;
 }
 
 
