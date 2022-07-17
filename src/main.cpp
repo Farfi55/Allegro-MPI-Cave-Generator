@@ -846,6 +846,10 @@ void write_header(std::ofstream& file) {
 		<< "n_procs" << separator
 		<< "x_threads" << separator
 		<< "y_threads" << separator
+		<< "cols" << separator
+		<< "rows" << separator
+		<< "radius" << separator
+		<< "roughness" << separator
 		<< "config_file_path" << std::endl;
 		// << "config_file_path" << separator
 		// << "frame_timings" << std::endl;
@@ -873,6 +877,10 @@ void write_result(std::ofstream& file) {
 		<< n_procs << separator
 		<< cfg->x_threads << separator
 		<< cfg->y_threads << separator
+		<< cfg->cols << separator
+		<< cfg->rows << separator
+		<< (int)cfg->neighbour_radius << separator
+		<< cfg->roughness << separator
 		<< config_file_path << std::endl;
 	// print_frame_times(file);
 
@@ -894,10 +902,10 @@ void end_recap() {
 	if(my_rank != ROOT_RANK) return;
 
 	std::cout << std::endl;
-	std::cout << "Total time:         " << total_time << " s" << std::endl;
 	std::cout << "Communication time: " << communication_time << " s" << std::endl;
 	std::cout << "Generation time:    " << generation_time << " s" << std::endl;
 	std::cout << "Draw time:          " << draw_time << " s" << std::endl;
+	std::cout << "Total time:         " << total_time << " s" << std::endl;
 
 	if(cfg->results_file_path.empty()) {
 		std::cout << "No results file path specified" << std::endl;
@@ -952,6 +960,21 @@ void get_arg_configs(int argc, char const* argv[]) {
 		else if(argv[i] == std::string("-o")) {
 			cfg->results_file_path = argv[++i];
 		}
+		else if(argv[i] == std::string("-cols") && i + 1 < argc) {
+			cfg->cols = std::stoi(argv[++i]);
+		}
+		else if(argv[i] == std::string("-rows") && i + 1 < argc) {
+			cfg->rows = std::stoi(argv[++i]);
+		}
+		else if(argv[i] == std::string("-radius") && i + 1 < argc) {
+			cfg->neighbour_radius = std::stoi(argv[++i]);
+		}
+		else if(argv[i] == std::string("-roughness") && i + 1 < argc) {
+			cfg->roughness = std::stoi(argv[++i]);
+		}
+		else if(argv[i] == std::string("-fill") && i + 1 < argc) {
+			cfg->initial_fill_perc = std::stoi(argv[++i]);
+		}
 	}
 }
 
@@ -969,6 +992,11 @@ void print_help() {
 		<< "-nog: same as -G" << std::endl
 		<< "-p, --parallel: Run in parallel" << std::endl
 		<< "-P, -s, --serial: Run in serial" << std::endl
+		<< "-cols <int>: Number of columns" << std::endl
+		<< "-rows <int>: Number of rows" << std::endl
+		<< "-radius <int>: Neighbourhood radius" << std::endl
+		<< "-roughness <int>: Roughness" << std::endl
+		<< "-fill <int>: Initial fill percentage" << std::endl
 		<< "-o <path>: Path to results file" << std::endl
 		<< std::endl
 		<< "Example: " << std::endl
