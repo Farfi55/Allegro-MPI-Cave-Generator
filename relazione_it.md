@@ -7,9 +7,9 @@
 
 ## Introduzione
 
-Mentre l'idea di fare un Automa cellulare che generasse una caverna mi è venuta da questo [video youtube](https://youtu.be/v7yyZZjF1z4), l'implementazione è del tutto personale.
+Mentre l'idea di fare un Automa cellulare che generasse una caverna mi è venuta da questo [video youtube](https://youtu.be/v7yyZZjF1z4), l'implementazione è del tutto personale con varie modifiche e generalizzazioni.
 
-![video dimostrazione](./videos/cavegen.gif)
+[pagina github progetto](https://github.com/Farfi55/Allegro-MPI-Cave-Generator)
 
 ## Progettazione Concettuale
 
@@ -18,9 +18,9 @@ L'esecuzione del programma può essere suddiviso in queste parti:
 1. si carica la configurazione scelta dall'utente tramite file e/o argomenti
 2. si crea una griglia di `cols` colonne e `rows` righe
 3. si riempie pseudo-casualmente la griglia di  `0` o  `1`  *(in base se il numero generato supera una soglia impostata dall'utente)*
-4. se si usano più thread, il **main-thread suddivide staticamente la griglia in delle sotto-griglie e le distribuisce**
+4. se si usano più threads, il **main-thread suddivide staticamente la griglia in delle sotto-griglie e le distribuisce**
 5. *inizia il loop principale*
-6. **si scambino le celle-halo** tra i thread vicini
+6. **si scambino le celle-halo** tra i threads vicini
 7. per ogni cella della sotto-griglia si contano i vicini vivi e:
    1. se sono maggiori o uguali alla soglia superiore la cella diventa piena (`1`)
    2. se sono inferiori alla soglia inferiore la cella diventa vuota (`0`)
@@ -78,20 +78,20 @@ Quando tutte le celle hanno finito di aggiornarsi le griglie si scambiano di ruo
 
 Fin da subito implementare la parallelizzazione si è rivelato alquanto difficoltoso, mentre prima il processo era semplice
 
+- creare griglia iniziale
 - aggiornare tutte le celle 
 - mostrare la griglia aggiornata
-- ripetere
 
 Ora c'era il bisogno di suddivisione del carico di lavoro e comunicazione tra i threads:
 
-- suddividere e inviare la griglia iniziale in diverse sotto-griglie
-- inviare le celle-halo ai thread vicini
-- ricevere le celle-halo dai thread vicini
+- suddividere la griglia iniziale in diverse sotto-griglie e inviare queste ai vari threads
+- inviare le celle-halo ai threads vicini
+- ricevere le celle-halo dai threads vicini
 - aggiornare le celle della propria sotto-griglia
-- inviare le sotto-griglie e ricostruire la griglia totale nel main-thread
+- inviare le sotto-griglie al main-thread e ricostruire la griglia intera
 - mostrare la griglia aggiornata 
 
-Come se non bastasse, ho voluto optare per una suddivisione a griglia in 2 dimensioni, questo ha complicato ulteriormente le cose, visto che in base alla posizione relativa con un altro thread, il tipo di comunicazione può variare.
+Come se non bastasse, ho voluto optare per una suddivisione a griglia su 2 dimensioni, questo ha complicato ulteriormente le cose, visto che in base alla posizione relativa con un altro thread, il tipo di comunicazione può variare, esempio: inviare una colonna invece di una riga o un angolo.
 
 #### Definizioni
 
@@ -105,18 +105,17 @@ inner_grid_size // numero di elementi all'interno della sotto-griglia senza cell
 outer_grid_size // numero di elementi all'interno della sotto-griglia 
 ```
 
-### MPI Datatypes
+### Tipi di dati MPI 
 
 Ho creato in totale 5 tipi di dato su misura: 
 
 ```cpp
 
-// inner_grid_t è come i vari thread gestiscono la propria sotto-griglia
-// ma quando si comunica con il main-thread, esso vuole riceverla come un blocco contiguo in memoria
+// inner_grid_t definisce il modo in cui i vari threads gestiscono la parte modificabile della propria sotto-griglia
+// ma quando si comunica con il main-thread, esso vuole riceverla come un blocco contiguo in memoria senza le celle-halo
 // infatti questi 2 datatype hanno lo stesso numero di elementi al suo interno, ma disposti in modo diverso
-// ecco perchè dell'utilizzo di 2 data types
 MPI_Datatype inner_grid_t;		// tiene in considerazione le celle halo
-MPI_Datatype contiguous_grid_t; 
+MPI_Datatype contiguous_grid_t; // stessi dati di inner_grid_t, ma continui in memoria (senza celle-halo)
 
 MPI_Datatype column_t; 	// utilizzato per inviare e ricevere le celle-halo a destra e sinistra 
 MPI_Datatype row_t; 	// utilizzato per inviare e ricevere le celle-halo sopra e sotto 
@@ -129,10 +128,17 @@ const int inner_sizes[] = { my_inner_rows, my_inner_cols }; // dimensione della 
 const int starts[] = { 0, 0 };								// iniziamo da (0, 0) per semplificare i calcoli
 MPI_Type_create_subarray(2, outer_sizes, inner_sizes, starts, MPI_ORDER_C, MPI_UINT8_T, &inner_grid_t);
 
+// ricordiamo che inner_grid_size = my_inner_rows * my_inner_cols, quindi la stessa quantità di inner_grid_t
 MPI_Type_contiguous(inner_grid_size, MPI_UINT8_T, &contiguous_grid_t);
 
+// per 'my_inner_rows' volte prendiamo 'radius' celle 
 MPI_Type_vector(my_inner_rows, radius, my_cols, MPI_UINT8_T, &column_t);
-MPI_Type_vector(radius, my_inner_cols, my_cols, MPI_UINT8_T, &row_t);
+
+// per 'radius' volte prendiamo 'my_inner_cols' celle
+MPI_Type_vector(radius, my_inner_cols, my_cols
+                , MPI_UINT8_T, &row_t);
+
+// per 'radius' volte prendiamo 'radius' celle
 MPI_Type_vector(radius, radius, my_cols, MPI_UINT8_T, &corner_t);
 
 . . .
@@ -145,9 +151,9 @@ Infatti per mostrare le celle all'utente bisogna avere una matrice con esattamen
 
 c'è stato anche bisogno di 3 tipi per le comunicazioni riguardanti le celle halo, in base alla posizione relativa dei thread.
 
-### MPI Communicator
+### Comunicatori MPI
 
-Per simulare la posizione relativa tra i thread ho usato un comunicatore apposito `cave_comm`:
+Per simulare la posizione relativa tra i thread ho usato un **comunicatore cartesiano su due dimensioni** apposito `cave_comm`:
 
 ```cpp
 int dims[2] = { cfg->y_threads, cfg->x_threads };
@@ -155,7 +161,7 @@ int periods[2] = { 0, 0 };
 MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 0, &cave_comm);
 ```
 
-in questo modo è stato relativamente facile conoscere per esempio chi fosse il thread in alto a destra rispetto a questo thread, facilitando le comunicazioni con i thread vicini.
+In questo modo è stato relativamente facile conoscere per esempio chi fosse il thread in alto a destra rispetto a questo thread, facilitando le comunicazioni con i thread vicini.
 
 ### Suddivisione Griglia
 
@@ -200,7 +206,7 @@ void send_columns() {
 
 ### Rendering
 
-Quando tutti i thread hanno finito di aggiornare la propria parte di griglia sorge il problema del rendering, allegro non da la possibilità di modificare la grafica da più thread, quindi c'è il bisogno di raggruppare nuovamente tutte le sotto-griglie nel main-thread, così da poter gestire la grafica da un solo thread.
+Quando tutti i threads hanno finito di aggiornare la propria parte di griglia sorge il problema del rendering, allegro non da la possibilità di modificare la grafica da più threads, quindi c'è il bisogno di raggruppare nuovamente tutte le sotto-griglie nel main-thread, così da poter gestire la grafica da un solo thread.
 
 MPI ci da a disposizione una funzione che fa esattamente questo.
 
@@ -226,17 +232,20 @@ Hardware utilizato: HP PROBOOK 430 G8
 
 Usando la grafica il tempo di esecuzione è determinato principalmente dal tempo di rendering (90%+).
 
+Esempio, una griglia 900x900: ha impiegato ~30 secondi dei quali 28.5 erano solo per la grafica.
+
 Questo tempo è difficilmente parallelizabile senza una GPU, quindi ho preso la decisione di concentrare i benchmark sul programma utilizzato senza rendering.
 
+### Variabili di benchmark:
+
 - ho considerato 3 griglie di dimensione diverse (900x900), (1500x1500) e (3000x3000).
-- tutte le varie combinazioni possibili con 8 processori, che dividano la gliglia in parti intere uguali.
-  esempio: (1, 1), (1, 2), (2, 1), (1, 3) ... (1, 6), (2, 3) ... (1, 8) 
-
+- tutte le combinazioni possibili con 8 processori su 2 dimensioni (x, y), che dividano la gliglia in parti intere uguali.
+  esempio: (1, 1), (1, 2), (2, 1), (1, 3) ... (1, 6), (2, 3) ... (2, 4), (1, 8) 
 - Il raggio è sempre di 2, e la variabile `roughness` è sempre 2.
-
+- il numero di generazioni è sempre 100
 - Il seed è sempre lo stesso, ho scelto a caso il numero `787878`
 
-#### Tempo di esecuzione griglia 900x900
+### Tempo di esecuzione griglia 900x900
 
 ![Tempo di esecuzione griglia 900x900](./imgs/graph_900.png)
 
@@ -252,7 +261,7 @@ Questo tempo è difficilmente parallelizabile senza una GPU, quindi ho preso la 
 
 
 
-#### Tempo di esecuzione griglia 1500x1500
+### Tempo di esecuzione griglia 1500x1500
 
 ![Tempo di esecuzione griglia 1500x1500](./imgs/graph_1500.png)
 
@@ -268,7 +277,7 @@ Questo tempo è difficilmente parallelizabile senza una GPU, quindi ho preso la 
 
 
 
-#### Tempo di esecuzione griglia 3000x3000
+### Tempo di esecuzione griglia 3000x3000
 
 
 
@@ -285,7 +294,20 @@ Questo tempo è difficilmente parallelizabile senza una GPU, quindi ho preso la 
 |       8        |    3.585     |        0.262        |       3.323       |
 
 
-#### Efficienza 
+
+### Considerazioni benchmark
+
+A una prima vista da questi grafi non notiamo particolari differenze di andamento tra le varie dimensioni della griglia.
+
+Con uno studio più approfondito si nota che nelle griglie di dimensione inferiore si arriva prima a una situazione con miglioramenti marginali, mentre la griglia maggiore continua a migliorare seppur anch'essa in modo sempre meno efficente.
+
+I temi di comunicazione restano ben sotto il tempo di generazione, e fino a 3 threads l'impatto delle comunicazioni è trascurabile, da 4 in poi, con le diverse disposizioni di threads aumentano il numero e il tipo di comunicazioni tra threads. 
+
+Un dato interessante è l'aumento dei tempi di comunicazione su 5 threads, probabilmente dovuto al fatto che avviare il programma su 5 threads si può fare solamente con disposizioni del tipo (1, 5) e (5, 1). 
+
+
+
+### Efficienza 
 
 
 
@@ -302,3 +324,23 @@ Questo tempo è difficilmente parallelizabile senza una GPU, quindi ho preso la 
 |       5        |        0.461         |        0.483         |       0.490        |
 |       6        |        0.460         |        0.465         |       0.485        |
 |       8        |        0.421         |        0.350         |       0.325        |
+
+possiamo osservare che con l'aumentare delle dimensioni della griglia aumenta anche l'efficienza, sebbene non in tutti i casi
+
+
+
+## Conclusioni
+
+MPI è risultato più completo di quello che mi aspettassi, offrendo delle funzionalità che hanno semplificato il processo di l'implementazione.
+
+Nelle versioni future del progetto si potrà sicuramente ridurre l'impatto delle comunicazioni tra i vicini iniziando a lavorare sulle celle che non necessitano di informazioni da altri thread, per poi svolgere quelli con dipendenze esterne una volta che sono arrivati i dati necessari.
+
+Sarebbe utile anche implementare un modo per salvare lo stato della griglia, magari sotto forma di immagine o in binario, così da poter utilizzare la griglia generata in altre applicazioni o giochi, dando più senso all'applicazione in generale.
+
+
+
+### Extra
+
+Alcuni scarabocchi della fase concettuale.
+
+<img src="./imgs/appunti.jpg" style="zoom: 33%;" />
